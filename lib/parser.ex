@@ -21,44 +21,74 @@ defmodule Membrane.Ogg.Parser do
     end
   end
 
-  @spec maybe_parse_page(bytes :: binary, continued_packets :: %{}) ::
+  @spec maybe_parse_page(page :: binary, continued_packets :: %{}) ::
           {:need_more_bytes}
           | {:ok, bytes :: binary, packets :: list(packet), continued_packets :: %{}}
-  defp maybe_parse_page(bytes, continued_packets) do
+  defp maybe_parse_page(initial_bytes, continued_packets) do
     with {:ok, bytes, header_type, bitstream_serial_number, number_of_page_segments} <-
-           parse_header(bytes),
-         {:ok, bytes, segment_table} <- parse_segment_table(bytes, number_of_page_segments) do
-      case parse_segment(bytes, segment_table) do
-        {:need_more_bytes} ->
-          {:need_more_bytes}
+           parse_header(initial_bytes),
+         {:ok, bytes, segment_table} <- parse_segment_table(bytes, number_of_page_segments),
+         {:ok} <- verify_length_and_crc(initial_bytes, segment_table) do
+      {bytes, packets, page_continued_packet} = parse_segments(bytes, segment_table)
 
-        {:ok, bytes, packets, page_continued_packet} ->
-          {packets, continued_packets, page_continued_packet} =
-            prepend_continued_packet(
-              continued_packets,
-              bitstream_serial_number,
-              packets,
-              page_continued_packet
-            )
+      {packets, continued_packets, page_continued_packet} =
+        prepend_continued_packet(
+          continued_packets,
+          bitstream_serial_number,
+          packets,
+          page_continued_packet
+        )
 
-          packets =
-            Enum.map(packets, fn packet ->
-              %{
-                payload: packet,
-                track_id: bitstream_serial_number,
-                bos?: (header_type &&& 0x2) > 0,
-                eos?: (header_type &&& 0x4) > 0
-              }
-            end)
+      packets =
+        Enum.map(packets, fn packet ->
+          %{
+            payload: packet,
+            track_id: bitstream_serial_number,
+            bos?: (header_type &&& 0x2) > 0,
+            eos?: (header_type &&& 0x4) > 0
+          }
+        end)
 
-          continued_packets =
-            if page_continued_packet == nil do
-              continued_packets
-            else
-              Map.put(continued_packets, bitstream_serial_number, page_continued_packet)
-            end
+      continued_packets =
+        if page_continued_packet == nil do
+          continued_packets
+        else
+          Map.put(continued_packets, bitstream_serial_number, page_continued_packet)
+        end
 
-          {:ok, bytes, packets, continued_packets}
+      {:ok, bytes, packets, continued_packets}
+    end
+  end
+
+  defp verify_length_and_crc(bytes, segment_table) do
+    segments_count = Enum.count(segment_table)
+    content_length = Enum.sum(segment_table)
+
+    if 22 + 4 + 1 + segments_count + content_length > byte_size(bytes) do
+      {:need_more_bytes}
+    else
+      <<before_crc::binary-size(22), crc::little-unsigned-size(32),
+        after_crc::binary-size(1 + segments_count + content_length), _rest::binary>> = bytes
+
+      crc_payload = before_crc <> <<0::size(32)>> <> after_crc
+
+      calculated_crc =
+        CRC.crc(
+          %{
+            extend: :crc_32,
+            init: 0x0,
+            poly: 0x04C11DB7,
+            xorout: 0x0,
+            refin: false,
+            refout: false
+          },
+          crc_payload
+        )
+
+      if calculated_crc == crc do
+        {:ok}
+      else
+        raise "Corrupted stream: invalid crc"
       end
     end
   end
@@ -108,10 +138,15 @@ defmodule Membrane.Ogg.Parser do
              number_of_page_segments :: integer}
   defp parse_header(
          <<"OggS", 0, header_type::unsigned-size(8), _granule_position::unsigned-size(64),
-           bitstream_serial_number::unsigned-size(32), _page_sequence_number::unsigned-size(32),
-           _crc::unsigned-size(32), number_of_page_segments::unsigned-size(8), rest::binary>>
+           bitstream_serial_number::little-unsigned-size(32),
+           _page_sequence_number::unsigned-size(32), _crc::unsigned-size(32),
+           number_of_page_segments::unsigned-size(8), rest::binary>>
        ) do
     {:ok, rest, header_type, bitstream_serial_number, number_of_page_segments}
+  end
+
+  defp parse_header(<<_header_data::binary-size(27), _rest::binary>>) do
+    raise "Corrupted stream: invalid page header"
   end
 
   defp parse_header(_too_short) do
@@ -129,9 +164,9 @@ defmodule Membrane.Ogg.Parser do
     end
   end
 
-  @spec parse_segment(bytes :: binary, segment_table :: list(integer)) ::
-          {:need_more_bytes} | {:ok, binary, list(binary), binary | nil}
-  defp parse_segment(bytes, segment_table) do
+  @spec parse_segments(bytes :: binary, segment_table :: list(integer)) ::
+          {binary, list(binary), binary | nil}
+  defp parse_segments(bytes, segment_table) do
     chunk_fun = fn element, acc ->
       if element == 255 do
         {:cont, [element | acc]}
@@ -148,16 +183,12 @@ defmodule Membrane.Ogg.Parser do
     packets_segments = Enum.chunk_while(segment_table, [], chunk_fun, after_chunk)
     packets_lengths = Enum.map(packets_segments, &Enum.sum/1)
 
-    if byte_size(bytes) < Enum.sum(packets_lengths) do
-      {:need_more_bytes}
-    else
-      {bytes, packets} = split_packets(bytes, packets_lengths)
+    {bytes, packets} = split_packets(bytes, packets_lengths)
 
-      if(List.last(segment_table) == 255) do
-        {:ok, bytes, Enum.drop(packets, 1), List.last(packets)}
-      else
-        {:ok, bytes, packets, nil}
-      end
+    if(List.last(segment_table) == 255) do
+      {bytes, Enum.drop(packets, 1), List.last(packets)}
+    else
+      {bytes, packets, nil}
     end
   end
 
