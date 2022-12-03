@@ -83,7 +83,7 @@ defmodule Membrane.Ogg.Demuxer do
   defp process_packet(packet, {actions, context, state}) do
     cond do
       packet.bos? -> process_bos_packet(packet, {actions, context, state})
-      packet.eos? -> {actions, context, state}
+      packet.eos? and packet.payload == <<>> -> {actions, context, state}
       true -> process_data_packet(packet, {actions, context, state})
     end
   end
@@ -140,7 +140,11 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp reclassify_buffer_actions({actions, state}, context) do
     {actions, _context, state} =
-      Enum.reduce(state.actions_buffer, {actions, context, state}, &classify_buffer_action/2)
+      Enum.reduce(
+        state.actions_buffer,
+        {actions, context, %State{state | actions_buffer: []}},
+        &classify_buffer_action/2
+      )
 
     {actions, state}
   end
