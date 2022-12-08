@@ -39,10 +39,8 @@ defmodule Membrane.Ogg.Demuxer do
 
   @impl true
   def handle_pad_added(Pad.ref(:output, id), _context, state) do
-    {[
-       stream_format:
-         {Pad.ref(:output, id), %RemoteStream{type: :packetized, content_format: Opus}}
-     ], %State{state | phase: :all_outputs_linked}}
+    stream_format = {Pad.ref(:output, id), %RemoteStream{type: :packetized, content_format: Opus}}
+    {[stream_format: stream_format], %State{state | phase: :all_outputs_linked}}
   end
 
   @impl true
@@ -52,10 +50,9 @@ defmodule Membrane.Ogg.Demuxer do
     {parsed, unparsed, continued_packets} =
       Membrane.Ogg.Parser.parse(unparsed, state.continued_packets)
 
-    state = %State{state | parser_acc: unparsed}
-    state = %State{state | continued_packets: continued_packets}
+    state = %State{state | parser_acc: unparsed, continued_packets: continued_packets}
 
-    {actions, state} = process_packets({[], context, state}, parsed)
+    {actions, state} = process_packets(parsed, context, state)
 
     demand_if_not_blocked({actions, state})
   end
@@ -73,9 +70,9 @@ defmodule Membrane.Ogg.Demuxer do
     {:ok, state}
   end
 
-  defp process_packets({actions, context, state}, packets_list) do
+  defp process_packets(packets_list, context, state) do
     {actions, _context, state} =
-      Enum.reduce(packets_list, {actions, context, state}, &process_packet/2)
+      Enum.reduce(packets_list, {[], context, state}, &process_packet/2)
 
     {actions, state}
   end
@@ -88,29 +85,31 @@ defmodule Membrane.Ogg.Demuxer do
     end
   end
 
-  defp process_bos_packet(packet, {actions, context, state}) do
-    case packet.payload do
-      <<"OpusHead", _rest::binary>> ->
-        new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
-        {actions ++ [new_track_action], context, %State{state | phase: :awaiting_linking}}
-    end
+  defp process_bos_packet(
+         %{payload: <<"OpusHead", _rest::binary>>} = packet,
+         {actions, context, state}
+       ) do
+    new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
+    {actions ++ [new_track_action], context, %State{state | phase: :awaiting_linking}}
+  end
+
+  defp process_bos_packet(_other, _params) do
+    raise "Invalid bos packet, probably unsupported codec."
+  end
+
+  defp process_data_packet(%{payload: <<"OpusTags", _rest::binary>>}, {actions, context, state}) do
+    {actions, context, state}
   end
 
   defp process_data_packet(packet, {actions, context, state}) do
-    case packet.payload do
-      <<"OpusTags", _rest::binary>> ->
-        {actions, context, state}
+    buffer_action =
+      {:buffer,
+       {Pad.ref(:output, packet.track_id),
+        %Buffer{
+          payload: packet.payload
+        }}}
 
-      payload ->
-        buffer_action =
-          {:buffer,
-           {Pad.ref(:output, packet.track_id),
-            %Buffer{
-              payload: payload
-            }}}
-
-        classify_buffer_action(buffer_action, {actions, context, state})
-    end
+    classify_buffer_action(buffer_action, {actions, context, state})
   end
 
   defp demand_if_not_blocked({actions, state}) do

@@ -1,13 +1,14 @@
 
 Mix.install([
-  :membrane_core,
-  :membrane_opus_format,
-  :membrane_file_plugin,
+  {:membrane_core, "~> 0.11.0"},
+  {:membrane_opus_format, "~> 0.3.0"},
+  {:crc, "~> 0.10"},
+  {:membrane_file_plugin, "~> 0.13.1"},
   {:membrane_portaudio_plugin,
     git: "https://github.com/membraneframework/membrane_portaudio_plugin.git",
     branch: "bugfix/rename_playback_state_to_playback"},
-  {:membrane_opus_plugin,
-    git: "https://github.com/membraneframework/membrane_opus_plugin.git", branch: "core-v0.11"}
+  {:membrane_opus_plugin, "~> 0.16.0"},
+  {:membrane_ogg_plugin, path: __DIR__ |> Path.join("..") |> Path.expand()},
 ])
 
 defmodule DemuxerExample do
@@ -17,11 +18,9 @@ defmodule DemuxerExample do
   def handle_init(_context, _opts) do
     structure = [
       child(:source, %Membrane.File.Source{
-        location: "test_fixtures_2.ogg"
-      }),
-      child(:ogg_demuxer, Membrane.Ogg.Demuxer),
-      get_child(:source)
-      |> get_child(:ogg_demuxer)
+        location: "./test/fixtures/test_fixtures_1.ogg"
+      }) |>
+      child(:ogg_demuxer, Membrane.Ogg.Demuxer)
     ]
 
     {[spec: structure, playback: :playing], %{}}
@@ -32,12 +31,10 @@ defmodule DemuxerExample do
     case codec do
       :opus ->
         structure = [
-          child(:opus, Membrane.Opus.Decoder),
-          child(:portaudio, Membrane.PortAudio.Sink),
           get_child(:ogg_demuxer)
           |> via_out(Pad.ref(:output, track_id))
-          |> get_child(:opus)
-          |> get_child(:portaudio)
+          |> child(:opus, Membrane.Opus.Decoder)
+          |> child(:portaudio, Membrane.PortAudio.Sink)
         ]
 
         {[spec: structure, playback: :playing], state}

@@ -22,11 +22,19 @@ end
 
 ## Usage
 
-TODO
+### `Membrane.Ogg.Demuxer`
+
+For an example see `examples/demuxer_example.exs`. To run the example you can use the following command:
+
+```iex examples/demuxer_example.exs```
+
+On macOS you might need to set the opus include path like this:
+
+```export C_INCLUDE_PATH=/opt/homebrew/Cellar/opus/1.3.1/include/```
 
 ## Copyright and License
 
-Copyright 2020, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_ogg_plugin)
+Copyright 2022, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_ogg_plugin)
 
 [![Software Mansion](https://logo.swmansion.com/logo?color=white&variant=desktop&width=200&tag=membrane-github)](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane_ogg_plugin)
 

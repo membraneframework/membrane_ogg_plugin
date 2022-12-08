@@ -46,12 +46,7 @@ defmodule Membrane.Ogg.Mixfile do
        branch: "bugfix/rename_playback_state_to_playback",
        only: :test,
        runtime: false},
-      {:membrane_opus_plugin,
-       git: "https://github.com/membraneframework/membrane_opus_plugin.git",
-       branch: "core-v0.11",
-       only: :test,
-       runtime: false},
-      {:membrane_raw_audio_format, "~> 0.10.0", override: true, only: :test, runtime: false},
+      {:membrane_opus_plugin, "~> 0.16.0", only: :test, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false}

@@ -5,16 +5,16 @@ defmodule Membrane.Ogg.Parser do
 
   @spec parse(binary, continued_packets :: %{}) ::
           {parsed :: list(packet), unparsed :: binary, continued_packets :: %{}}
-  def parse(bytes, continued_packets) do
-    do_parse([], bytes, continued_packets)
+  def parse(data, continued_packets) do
+    do_parse([], data, continued_packets)
   end
 
-  @spec do_parse(acc :: list(packet), bytes :: binary, continued_packets :: %{}) ::
-          {parsed :: list(packet), bytes :: binary, continued_packets :: %{}}
-  defp do_parse(acc, bytes, continued_packets) do
-    case maybe_parse_page(bytes, continued_packets) do
-      {:need_more_bytes} ->
-        {acc, bytes, continued_packets}
+  @spec do_parse(acc :: list(packet), data :: binary, continued_packets :: %{}) ::
+          {parsed :: list(packet), data :: binary, continued_packets :: %{}}
+  defp do_parse(acc, data, continued_packets) do
+    case maybe_parse_page(data, continued_packets) do
+      {:error, :need_more_bytes} ->
+        {acc, data, continued_packets}
 
       {:ok, unparsed, packets, continued_packets} ->
         do_parse(acc ++ packets, unparsed, continued_packets)
@@ -22,14 +22,14 @@ defmodule Membrane.Ogg.Parser do
   end
 
   @spec maybe_parse_page(page :: binary, continued_packets :: %{}) ::
-          {:need_more_bytes}
-          | {:ok, bytes :: binary, packets :: list(packet), continued_packets :: %{}}
+          {:ok, data :: binary, packets :: list(packet), continued_packets :: %{}}
+          | {:error, :need_more_bytes}
   defp maybe_parse_page(initial_bytes, continued_packets) do
-    with {:ok, bytes, header_type, bitstream_serial_number, number_of_page_segments} <-
+    with {:ok, data, header_type, bitstream_serial_number, number_of_page_segments} <-
            parse_header(initial_bytes),
-         {:ok, bytes, segment_table} <- parse_segment_table(bytes, number_of_page_segments),
-         {:ok} <- verify_length_and_crc(initial_bytes, segment_table) do
-      {bytes, packets, page_continued_packet} = parse_segments(bytes, segment_table)
+         {:ok, data, segment_table} <- parse_segment_table(data, number_of_page_segments),
+         :ok <- verify_length_and_crc(initial_bytes, segment_table) do
+      {data, packets, page_continued_packet} = parse_segments(data, segment_table)
 
       {packets, continued_packets, page_continued_packet} =
         prepend_continued_packet(
@@ -56,21 +56,21 @@ defmodule Membrane.Ogg.Parser do
           Map.put(continued_packets, bitstream_serial_number, page_continued_packet)
         end
 
-      {:ok, bytes, packets, continued_packets}
+      {:ok, data, packets, continued_packets}
     end
   end
 
-  defp verify_length_and_crc(bytes, segment_table) do
+  defp verify_length_and_crc(data, segment_table) do
     segments_count = Enum.count(segment_table)
     content_length = Enum.sum(segment_table)
 
-    if 22 + 4 + 1 + segments_count + content_length > byte_size(bytes) do
-      {:need_more_bytes}
+    if 22 + 4 + 1 + segments_count + content_length > byte_size(data) do
+      {:error, :need_more_bytes}
     else
       <<before_crc::binary-size(22), crc::little-unsigned-size(32),
-        after_crc::binary-size(1 + segments_count + content_length), _rest::binary>> = bytes
+        after_crc::binary-size(1 + segments_count + content_length), _rest::binary>> = data
 
-      crc_payload = before_crc <> <<0::size(32)>> <> after_crc
+      crc_payload = <<before_crc::binary, 0::size(32), after_crc::binary>>
 
       calculated_crc =
         CRC.crc(
@@ -86,7 +86,7 @@ defmodule Membrane.Ogg.Parser do
         )
 
       if calculated_crc == crc do
-        {:ok}
+        :ok
       else
         raise "Corrupted stream: invalid crc"
       end
@@ -132,10 +132,10 @@ defmodule Membrane.Ogg.Parser do
     end
   end
 
-  @spec parse_header(bytes :: binary) ::
-          {:need_more_bytes}
-          | {:ok, bytes :: binary, header_type :: integer, bitstream_serial_number :: integer,
-             number_of_page_segments :: integer}
+  @spec parse_header(data :: binary) ::
+          {:ok, data :: binary, header_type :: integer, bitstream_serial_number :: integer,
+           number_of_page_segments :: integer}
+          | {:error, :need_more_bytes}
   defp parse_header(
          <<"OggS", 0, header_type::unsigned-size(8), _granule_position::unsigned-size(64),
            bitstream_serial_number::little-unsigned-size(32),
@@ -150,23 +150,23 @@ defmodule Membrane.Ogg.Parser do
   end
 
   defp parse_header(_too_short) do
-    {:need_more_bytes}
+    {:error, :need_more_bytes}
   end
 
-  @spec parse_segment_table(bytes :: binary, page_segments_count :: integer) ::
-          {:need_more_bytes} | {:ok, bytes :: binary, list(integer)}
-  defp parse_segment_table(bytes, page_segments_count) do
-    if byte_size(bytes) < page_segments_count do
-      {:need_more_bytes}
+  @spec parse_segment_table(data :: binary, page_segments_count :: integer) ::
+          {:ok, data :: binary, list(integer)} | {:error, :need_more_bytes}
+  defp parse_segment_table(data, page_segments_count) do
+    if byte_size(data) < page_segments_count do
+      {:error, :need_more_bytes}
     else
-      <<segment_table::binary-size(page_segments_count), bytes::binary>> = bytes
-      {:ok, bytes, :binary.bin_to_list(segment_table)}
+      <<segment_table::binary-size(page_segments_count), data::binary>> = data
+      {:ok, data, :binary.bin_to_list(segment_table)}
     end
   end
 
-  @spec parse_segments(bytes :: binary, segment_table :: list(integer)) ::
+  @spec parse_segments(data :: binary, segment_table :: list(integer)) ::
           {binary, list(binary), binary | nil}
-  defp parse_segments(bytes, segment_table) do
+  defp parse_segments(data, segment_table) do
     chunk_fun = fn element, acc ->
       if element == 255 do
         {:cont, [element | acc]}
@@ -183,23 +183,23 @@ defmodule Membrane.Ogg.Parser do
     packets_segments = Enum.chunk_while(segment_table, [], chunk_fun, after_chunk)
     packets_lengths = Enum.map(packets_segments, &Enum.sum/1)
 
-    {bytes, packets} = split_packets(bytes, packets_lengths)
+    {data, packets} = split_packets(data, packets_lengths)
 
     if(List.last(segment_table) == 255) do
-      {bytes, Enum.drop(packets, 1), List.last(packets)}
+      {data, Enum.drop(packets, 1), List.last(packets)}
     else
-      {bytes, packets, nil}
+      {data, packets, nil}
     end
   end
 
-  @spec split_packets(bytes :: binary, counts :: list(integer)) :: {binary, list(binary)}
-  defp split_packets(bytes, []) do
-    {bytes, []}
+  @spec split_packets(data :: binary, counts :: list(integer)) :: {binary, list(binary)}
+  defp split_packets(data, []) do
+    {data, []}
   end
 
-  defp split_packets(bytes, [count | rest_counts]) do
-    <<packet::binary-size(count), bytes::binary>> = bytes
-    {bytes, packets} = split_packets(bytes, rest_counts)
-    {bytes, [packet | packets]}
+  defp split_packets(data, [count | rest_counts]) do
+    <<packet::binary-size(count), data::binary>> = data
+    {data, packets} = split_packets(data, rest_counts)
+    {data, [packet | packets]}
   end
 end
