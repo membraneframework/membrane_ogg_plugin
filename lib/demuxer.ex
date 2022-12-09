@@ -1,6 +1,7 @@
 defmodule Membrane.Ogg.Demuxer do
   use Membrane.Filter
   alias Membrane.{Buffer, RemoteStream, Opus}
+  require Membrane.Logger
 
   def_input_pad :input,
     availability: :always,
@@ -18,13 +19,15 @@ defmodule Membrane.Ogg.Demuxer do
             actions_buffer: list,
             parser_acc: binary,
             phase: :all_outputs_linked | :awaiting_linking,
-            continued_packets: %{}
+            continued_packets: %{},
+            tracks: list
           }
 
     defstruct actions_buffer: [],
               parser_acc: <<>>,
               phase: :awaiting_linking,
-              continued_packets: %{}
+              continued_packets: %{},
+              tracks: []
   end
 
   @impl true
@@ -40,7 +43,9 @@ defmodule Membrane.Ogg.Demuxer do
   @impl true
   def handle_pad_added(Pad.ref(:output, id), _context, state) do
     stream_format = {Pad.ref(:output, id), %RemoteStream{type: :packetized, content_format: Opus}}
-    {[stream_format: stream_format], %State{state | phase: :all_outputs_linked}}
+    state = %State{state | phase: :all_outputs_linked, tracks: state.tracks ++ [id]}
+
+    {[stream_format: stream_format], state}
   end
 
   @impl true
@@ -52,17 +57,15 @@ defmodule Membrane.Ogg.Demuxer do
 
     state = %State{state | parser_acc: unparsed, continued_packets: continued_packets}
 
-    {actions, state} = process_packets(parsed, context, state)
+    {actions, state} = process_packets(parsed, state)
 
-    demand_if_not_blocked({actions, state})
+    process_actions(actions, context, state)
   end
 
   @impl true
   def handle_demand(Pad.ref(:output, _id), _size, :buffers, context, state)
       when state.phase == :all_outputs_linked do
-    {[], state}
-    |> reclassify_buffer_actions(context)
-    |> demand_if_not_blocked()
+    process_actions(state.actions_buffer, context, %State{state | actions_buffer: []})
   end
 
   @impl true
@@ -70,38 +73,57 @@ defmodule Membrane.Ogg.Demuxer do
     {:ok, state}
   end
 
-  defp process_packets(packets_list, context, state) do
-    {actions, _context, state} =
-      Enum.reduce(packets_list, {[], context, state}, &process_packet/2)
+  defp process_actions(actions, context, state) do
+    demands = get_demands_from_context(context, state)
+
+    {sent_actions, buffered_actions} = classify_actions(actions, demands, state)
+
+    state = %State{state | actions_buffer: buffered_actions}
+
+    actions = sent_actions ++ demand_if_not_blocked(state)
 
     {actions, state}
   end
 
-  defp process_packet(packet, {actions, context, state}) do
+  defp get_demands_from_context(context, state) do
+    Enum.reduce(state.tracks, %{}, fn track, acc ->
+      Map.put(acc, track, context.pads[Pad.ref(:output, track)].demand)
+    end)
+  end
+
+  defp process_packets(packets_list, state) do
+    Enum.reduce(packets_list, {[], state}, fn packet, {actions, state} ->
+      {new_actions, state} = process_packet(packet, state)
+      {actions ++ new_actions, state}
+    end)
+  end
+
+  defp process_packet(packet, state) do
     cond do
-      packet.bos? -> process_bos_packet(packet, {actions, context, state})
-      packet.eos? and packet.payload == <<>> -> {actions, context, state}
-      true -> process_data_packet(packet, {actions, context, state})
+      packet.bos? -> process_bos_packet(packet, state)
+      packet.eos? and packet.payload == <<>> -> {[], state}
+      true -> process_data_packet(packet, state)
     end
   end
 
   defp process_bos_packet(
          %{payload: <<"OpusHead", _rest::binary>>} = packet,
-         {actions, context, state}
+         state
        ) do
     new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
-    {actions ++ [new_track_action], context, %State{state | phase: :awaiting_linking}}
+
+    {[new_track_action], %State{state | phase: :awaiting_linking}}
   end
 
-  defp process_bos_packet(_other, _params) do
+  defp process_bos_packet(_other, _state) do
     raise "Invalid bos packet, probably unsupported codec."
   end
 
-  defp process_data_packet(%{payload: <<"OpusTags", _rest::binary>>}, {actions, context, state}) do
-    {actions, context, state}
+  defp process_data_packet(%{payload: <<"OpusTags", _rest::binary>>}, state) do
+    {[], state}
   end
 
-  defp process_data_packet(packet, {actions, context, state}) do
+  defp process_data_packet(packet, state) do
     buffer_action =
       {:buffer,
        {Pad.ref(:output, packet.track_id),
@@ -109,16 +131,11 @@ defmodule Membrane.Ogg.Demuxer do
           payload: packet.payload
         }}}
 
-    classify_buffer_action(buffer_action, {actions, context, state})
+    {[buffer_action], state}
   end
 
-  defp demand_if_not_blocked({actions, state}) do
-    if blocked?(state) do
-      {actions, state}
-    else
-      actions = actions ++ [{:demand, :input}]
-      {actions, state}
-    end
+  defp demand_if_not_blocked(state) do
+    if blocked?(state), do: [], else: [demand: :input]
   end
 
   defp blocked?(state) do
@@ -127,34 +144,32 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp classify_buffer_action(
          {:buffer, {Pad.ref(:output, id), _buffer}} = buffer_action,
-         {actions, context, state}
+         {sent_actions, cached_actions, demands}
        ) do
-    if not blocked?(state) and context.pads[Pad.ref(:output, id)].demand > 0 do
-      context = update_in(context.pads[Pad.ref(:output, id)].demand, &(&1 - 1))
-      {actions ++ [buffer_action], context, state}
+    if demands[id] > 0 and Enum.empty?(cached_actions) do
+      demands = %{demands | id => demands[id] - 1}
+      {sent_actions ++ [buffer_action], cached_actions, demands}
     else
-      {actions, context, %State{state | actions_buffer: state.actions_buffer ++ [buffer_action]}}
+      {sent_actions, cached_actions ++ [buffer_action], demands}
     end
   end
 
-  defp reclassify_buffer_actions({actions, state}, context) do
-    {actions, _context, state} =
-      Enum.reduce(
-        state.actions_buffer,
-        {actions, context, %State{state | actions_buffer: []}},
-        &classify_buffer_action/2
-      )
+  defp classify_actions(actions, demands, state) do
+    if blocked?(state) do
+      Enum.split_with(actions, fn
+        {:buffer, _} -> false
+        {_, _} -> true
+      end)
+    else
+      {sent_actions, buffered_actions, _demands} =
+        Enum.reduce(actions, {[], [], demands}, &classify_buffer_action/2)
 
-    {actions, state}
+      {sent_actions, buffered_actions}
+    end
   end
 
   @impl true
-  def handle_end_of_stream(:input, context, state) do
-    end_actions =
-      context.pads
-      |> Enum.filter(fn {_pad_ref, pad_data} -> pad_data.direction == :output end)
-      |> Enum.map(fn {pad_ref, _pad_data} -> {:end_of_stream, pad_ref} end)
-
-    {state.actions_buffer ++ end_actions, %State{state | actions_buffer: []}}
+  def handle_end_of_stream(:input, _context, state) do
+    {state.actions_buffer ++ [forward: :end_of_stream], %State{state | actions_buffer: []}}
   end
 end
