@@ -2,6 +2,7 @@ defmodule ParserTest do
   use ExUnit.Case, async: true
 
   import Membrane.Ogg.Parser
+  alias Membrane.Ogg.Parser.Packet
 
   defp create_page(segments) do
     segment_table = Enum.map(segments, fn seg -> <<seg>> end) |> Enum.join()
@@ -45,7 +46,7 @@ defmodule ParserTest do
   test "Parses a simple page with a single segment" do
     page = create_page([5])
     {parsed, unparsed, continued_packets} = parse(page, %{})
-    assert parsed == [%{payload: segment(5), track_id: 0, bos?: false, eos?: false}]
+    assert parsed == [%Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false}]
     assert unparsed == <<>>
     assert continued_packets == %{}
   end
@@ -56,7 +57,7 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page, %{})
 
     assert parsed == [
-             %{
+             %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
@@ -83,8 +84,8 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1 <> page2, %{})
 
     assert parsed == [
-             %{payload: segment(5), track_id: 0, bos?: false, eos?: false},
-             %{payload: segment(3), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(3), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert unparsed == <<>>
@@ -93,9 +94,9 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1 <> page2 <> page3, %{})
 
     assert parsed == [
-             %{payload: segment(5), track_id: 0, bos?: false, eos?: false},
-             %{payload: segment(3), track_id: 0, bos?: false, eos?: false},
-             %{
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(3), track_id: 0, bos?: false, eos?: false},
+             %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
@@ -113,13 +114,13 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page, %{})
 
     assert parsed == [
-             %{
+             %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
                eos?: false
              },
-             %{payload: segment(10), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(10), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert unparsed == <<>>
@@ -133,7 +134,7 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1 <> page2, %{})
 
     assert parsed == [
-             %{
+             %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
@@ -153,7 +154,7 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page2, continued_packets)
 
     assert parsed == [
-             %{
+             %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
@@ -167,7 +168,7 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1 <> page1 <> page2, %{})
 
     assert parsed == [
-             %{
+             %Packet{
                payload:
                  segment(255) <> segment(255) <> segment(255) <> segment(255) <> segment(3),
                track_id: 0,
@@ -185,7 +186,7 @@ defmodule ParserTest do
 
     {parsed, unparsed, continued_packets} = parse(page1, %{})
 
-    assert parsed == [%{payload: segment(255), track_id: 0, bos?: false, eos?: false}]
+    assert parsed == [%Packet{payload: segment(255), track_id: 0, bos?: false, eos?: false}]
     assert unparsed == <<>>
     assert continued_packets == %{}
 
@@ -193,7 +194,7 @@ defmodule ParserTest do
 
     {parsed, unparsed, continued_packets} = parse(page1, %{})
 
-    assert parsed == [%{payload: <<>>, track_id: 0, bos?: false, eos?: false}]
+    assert parsed == [%Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}]
     assert unparsed == <<>>
     assert continued_packets == %{}
 
@@ -202,8 +203,8 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1, %{})
 
     assert parsed == [
-             %{payload: segment(2), track_id: 0, bos?: false, eos?: false},
-             %{payload: <<>>, track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
            ]
 
     assert unparsed == <<>>
@@ -215,8 +216,8 @@ defmodule ParserTest do
     {parsed, unparsed, continued_packets} = parse(page1 <> page2, %{})
 
     assert parsed == [
-             %{payload: segment(255), track_id: 0, bos?: false, eos?: false},
-             %{payload: segment(1), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(255), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(1), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert unparsed == <<>>

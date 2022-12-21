@@ -1,4 +1,11 @@
 defmodule Membrane.Ogg.Demuxer do
+  @moduledoc """
+  A Membrane Element for demuxing an Ogg.
+
+  For now it supports only Ogg containing a single Opus track.
+
+  All the tracks in the Ogg must have a corresponding output pad linked (`Pad.ref(:output, track_id)`).
+  """
   use Membrane.Filter
   alias Membrane.{Buffer, RemoteStream, Opus}
   require Membrane.Logger
@@ -13,6 +20,13 @@ defmodule Membrane.Ogg.Demuxer do
     availability: :on_request,
     mode: :pull,
     accepted_format: %RemoteStream{type: :packetized, content_format: Opus}
+
+  @typedoc """
+  Notification sent when a new track is identified in the Ogg.
+  Upon receiving the notification a `Pad.ref(:output, track_id)` pad should be linked.
+  """
+  @type new_track_t() ::
+          {:new_track, {track_id :: integer(), track_type :: atom()}}
 
   defmodule State do
     @type t :: %__MODULE__{
@@ -124,13 +138,8 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   defp process_data_packet(packet, state) do
-    buffer_action =
-      {:buffer,
-       {Pad.ref(:output, packet.track_id),
-        %Buffer{
-          payload: packet.payload
-        }}}
-
+    pad = Pad.ref(:output, packet.track_id)
+    buffer_action = {:buffer, {pad, %Buffer{payload: packet.payload}}}
     {[buffer_action], state}
   end
 
@@ -142,6 +151,20 @@ defmodule Membrane.Ogg.Demuxer do
     not Enum.empty?(state.actions_buffer) or state.phase != :all_outputs_linked
   end
 
+  defp classify_actions(actions, demands, state) do
+    if blocked?(state) do
+      Enum.split_with(actions, fn
+        {:notify_parent, {:new_track, _}} -> true
+        _other -> false
+      end)
+    else
+      {sent_actions, buffered_actions, _demands} =
+        Enum.reduce(actions, {[], [], demands}, &classify_buffer_action/2)
+
+      {sent_actions, buffered_actions}
+    end
+  end
+
   defp classify_buffer_action(
          {:buffer, {Pad.ref(:output, id), _buffer}} = buffer_action,
          {sent_actions, cached_actions, demands}
@@ -151,20 +174,6 @@ defmodule Membrane.Ogg.Demuxer do
       {sent_actions ++ [buffer_action], cached_actions, demands}
     else
       {sent_actions, cached_actions ++ [buffer_action], demands}
-    end
-  end
-
-  defp classify_actions(actions, demands, state) do
-    if blocked?(state) do
-      Enum.split_with(actions, fn
-        {:buffer, _} -> false
-        {_, _} -> true
-      end)
-    else
-      {sent_actions, buffered_actions, _demands} =
-        Enum.reduce(actions, {[], [], demands}, &classify_buffer_action/2)
-
-      {sent_actions, buffered_actions}
     end
   end
 
