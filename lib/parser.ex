@@ -1,7 +1,18 @@
 defmodule Membrane.Ogg.Parser do
+  @moduledoc false
+
   import Bitwise
 
   defmodule Packet do
+    @moduledoc false
+
+    @type t() :: %__MODULE__{
+            payload: binary(),
+            track_id: non_neg_integer(),
+            bos?: boolean(),
+            eos?: boolean()
+          }
+
     defstruct payload: <<>>,
               track_id: 0,
               bos?: false,
@@ -10,8 +21,8 @@ defmodule Membrane.Ogg.Parser do
 
   @type continued_packets_t :: %{integer => binary}
 
-  @spec parse(binary, %{}) ::
-          {parsed :: list(Packet), unparsed :: binary, continued_packets :: continued_packets_t}
+  @spec parse(binary, continued_packets_t) ::
+          {parsed :: [Packet.t()], continued_packets :: continued_packets_t, rest :: binary}
   def parse(data, continued_packets) do
     do_parse([], data, continued_packets)
   end
@@ -19,7 +30,7 @@ defmodule Membrane.Ogg.Parser do
   defp do_parse(acc, data, continued_packets) do
     case parse_page(data, continued_packets) do
       {:error, :need_more_bytes} ->
-        {acc, data, continued_packets}
+        {acc, continued_packets, data}
 
       {:error, :invalid_crc} ->
         raise "Corrupted stream: invalid crc"
@@ -27,8 +38,8 @@ defmodule Membrane.Ogg.Parser do
       {:error, :invalid_header} ->
         raise "Corrupted stream: invalid page header"
 
-      {:ok, packets, continued_packets, unparsed} ->
-        do_parse(acc ++ packets, unparsed, continued_packets)
+      {:ok, packets, continued_packets, rest} ->
+        do_parse(acc ++ packets, rest, continued_packets)
     end
   end
 

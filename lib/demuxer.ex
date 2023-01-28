@@ -64,12 +64,11 @@ defmodule Membrane.Ogg.Demuxer do
 
   @impl true
   def handle_process(:input, %Buffer{payload: bytes}, context, state) do
-    unparsed = state.parser_acc <> bytes
+    rest = state.parser_acc <> bytes
 
-    {parsed, unparsed, continued_packets} =
-      Membrane.Ogg.Parser.parse(unparsed, state.continued_packets)
+    {parsed, continued_packets, rest} = Membrane.Ogg.Parser.parse(rest, state.continued_packets)
 
-    state = %State{state | parser_acc: unparsed, continued_packets: continued_packets}
+    state = %State{state | parser_acc: rest, continued_packets: continued_packets}
 
     {actions, state} = process_packets(parsed, state)
 
