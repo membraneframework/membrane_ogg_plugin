@@ -153,7 +153,7 @@ defmodule Membrane.Ogg.Parser do
 
     {packets, data} = split_packets(data, packets_lengths)
 
-    if(List.last(segment_table) == 255) do
+    if List.last(segment_table) == 255 do
       {List.delete_at(packets, -1), List.last(packets), data}
     else
       {packets, nil, data}
