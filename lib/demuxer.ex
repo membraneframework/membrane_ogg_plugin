@@ -7,8 +7,8 @@ defmodule Membrane.Ogg.Demuxer do
   All the tracks in the Ogg must have a corresponding output pad linked (`Pad.ref(:output, track_id)`).
   """
   use Membrane.Filter
-  alias Membrane.{Buffer, RemoteStream, Opus}
   require Membrane.Logger
+  alias Membrane.{Buffer, Opus, RemoteStream}
 
   def_input_pad :input,
     availability: :always,
@@ -29,6 +29,8 @@ defmodule Membrane.Ogg.Demuxer do
           {:new_track, {track_id :: integer(), track_type :: atom()}}
 
   defmodule State do
+    @moduledoc false
+
     @type t :: %__MODULE__{
             actions_buffer: list,
             parser_acc: binary,

@@ -5,8 +5,8 @@ defmodule ParserTest do
   alias Membrane.Ogg.Parser.Packet
 
   defp create_page(segments) do
-    segment_table = Enum.map(segments, fn seg -> <<seg>> end) |> Enum.join()
-    content = Enum.map(segments, fn seg -> segment(seg) end) |> Enum.join()
+    segment_table = Enum.map_join(segments, fn seg -> <<seg>> end)
+    content = Enum.map_join(segments, fn seg -> segment(seg) end)
     before_crc = <<"OggS", 0, 0, 0::size(8 * 8), 0::size(4 * 8), 0::size(4 * 8)>>
     after_crc = <<Enum.count(segments)>> <> segment_table <> content
     crc_payload = before_crc <> <<0::size(32)>> <> after_crc

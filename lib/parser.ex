@@ -106,8 +106,10 @@ defmodule Membrane.Ogg.Parser do
     if 27 + segments_count + content_length > byte_size(data) do
       {:error, :need_more_bytes}
     else
+      after_crc_size = 1 + segments_count + content_length
+
       <<before_crc::binary-size(22), crc::little-unsigned-size(32),
-        after_crc::binary-size(1 + segments_count + content_length), _rest::binary>> = data
+        after_crc::binary-size(after_crc_size), _rest::binary>> = data
 
       crc_payload = <<before_crc::binary, 0::size(32), after_crc::binary>>
 
@@ -151,7 +153,7 @@ defmodule Membrane.Ogg.Parser do
 
     {packets, data} = split_packets(data, packets_lengths)
 
-    if(List.last(segment_table) == 255) do
+    if List.last(segment_table) == 255 do
       {List.delete_at(packets, -1), List.last(packets), data}
     else
       {packets, nil, data}
