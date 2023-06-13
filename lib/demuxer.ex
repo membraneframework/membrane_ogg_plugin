@@ -102,7 +102,7 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp get_demands_from_context(context, state) do
     Enum.reduce(state.tracks, %{}, fn track, acc ->
-      Map.put(acc, track, context.pads[Pad.ref(:output, track)].demand)
+      Map.put(acc, track, context.pads[Pad.ref(:output, track)].demand_snapshot)
     end)
   end
 
