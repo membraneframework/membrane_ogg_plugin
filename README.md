@@ -15,7 +15,7 @@ The package can be installed by adding `membrane_ogg_plugin` to your list of dep
 ```elixir
 def deps do
   [
-	  {:membrane_ogg_plugin, "~> 0.2.0"}
+	  {:membrane_ogg_plugin, "~> 0.2.1"}
   ]
 end
 ```
