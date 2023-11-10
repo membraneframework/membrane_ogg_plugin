@@ -11,14 +11,13 @@ defmodule Membrane.Ogg.Demuxer do
   alias Membrane.{Buffer, Opus, RemoteStream}
 
   def_input_pad :input,
-    availability: :always,
-    mode: :pull,
+    flow_control: :manual,
     demand_unit: :buffers,
     accepted_format: any_of(RemoteStream)
 
   def_output_pad :output,
     availability: :on_request,
-    mode: :pull,
+    flow_control: :manual,
     accepted_format: %RemoteStream{type: :packetized, content_format: Opus}
 
   @typedoc """
@@ -65,7 +64,7 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @impl true
-  def handle_process(:input, %Buffer{payload: bytes}, context, state) do
+  def handle_buffer(:input, %Buffer{payload: bytes}, context, state) do
     rest = state.parser_acc <> bytes
 
     {parsed, continued_packets, rest} = Membrane.Ogg.Parser.parse(rest, state.continued_packets)

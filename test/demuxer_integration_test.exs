@@ -12,14 +12,14 @@ defmodule Membrane.Ogg.DemuxerTest do
 
     @impl true
     def handle_init(_context, options) do
-      structure = [
+      spec = [
         child(:source, %Membrane.File.Source{location: options.input_file})
         |> child(:ogg_demuxer, Membrane.Ogg.Demuxer)
       ]
 
       state = %{output_dir: options.output_dir, track_id_to_file: options.track_id_to_output_file}
 
-      {[spec: structure, playback: :playing], state}
+      {[spec: spec], state}
     end
 
     @impl true
@@ -28,7 +28,7 @@ defmodule Membrane.Ogg.DemuxerTest do
 
       case codec do
         :opus ->
-          structure = [
+          spec = [
             get_child(:ogg_demuxer)
             |> via_out(Pad.ref(:output, track_id))
             |> child(:sink, %Membrane.File.Sink{
@@ -36,7 +36,7 @@ defmodule Membrane.Ogg.DemuxerTest do
             })
           ]
 
-          {[spec: structure, playback: :playing], state}
+          {[spec: spec], state}
       end
     end
   end
@@ -53,11 +53,9 @@ defmodule Membrane.Ogg.DemuxerTest do
       ]
       |> Testing.Pipeline.start_link_supervised!()
 
-    assert_pipeline_play(pipeline)
-
     assert_end_of_stream(pipeline, :sink)
 
-    Testing.Pipeline.terminate(pipeline, blocking?: true)
+    Testing.Pipeline.terminate(pipeline)
 
     for reference <- Map.values(track_id_to_reference) do
       reference_file = File.read!(Path.join(@fixtures_dir, reference))
