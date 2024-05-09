@@ -31,6 +31,10 @@ defmodule Membrane.Ogg.DemuxerTest do
           spec = [
             get_child(:ogg_demuxer)
             |> via_out(Pad.ref(:output, track_id))
+            |> child(%Membrane.Opus.Parser{generate_best_effort_timestamps?: true})
+            |> child(%Membrane.Debug.Filter{
+              handle_buffer: &IO.inspect({&1.metadata.ogg_page_pts, &1.pts}, label: "dupaaa")
+            })
             |> child(:sink, %Membrane.File.Sink{
               location: Path.join(state.output_dir, output_file)
             })

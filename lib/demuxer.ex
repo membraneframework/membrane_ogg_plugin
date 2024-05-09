@@ -9,6 +9,7 @@ defmodule Membrane.Ogg.Demuxer do
   use Membrane.Filter
   require Membrane.Logger
   alias Membrane.{Buffer, Opus, RemoteStream}
+  alias Membrane.Ogg.Parser
 
   def_input_pad :input,
     flow_control: :manual,
@@ -31,18 +32,20 @@ defmodule Membrane.Ogg.Demuxer do
     @moduledoc false
 
     @type t :: %__MODULE__{
-            actions_buffer: list,
-            parser_acc: binary,
+            actions_buffer: [Membrane.Element.Action.t()],
+            parser_acc: binary(),
             phase: :all_outputs_linked | :awaiting_linking,
             continued_packets: %{},
-            tracks: list
+            tracks: [non_neg_integer()],
+            next_pts: Membrane.Time.t()
           }
 
     defstruct actions_buffer: [],
               parser_acc: <<>>,
               phase: :awaiting_linking,
               continued_packets: %{},
-              tracks: []
+              tracks: [],
+              next_pts: 0
   end
 
   @impl true
@@ -67,9 +70,15 @@ defmodule Membrane.Ogg.Demuxer do
   def handle_buffer(:input, %Buffer{payload: bytes}, context, state) do
     rest = state.parser_acc <> bytes
 
-    {parsed, continued_packets, rest} = Membrane.Ogg.Parser.parse(rest, state.continued_packets)
+    {parsed, continued_packets, rest, next_pts} =
+      Parser.parse(rest, state.continued_packets, state.next_pts)
 
-    state = %State{state | parser_acc: rest, continued_packets: continued_packets}
+    state = %State{
+      state
+      | parser_acc: rest,
+        continued_packets: continued_packets,
+        next_pts: next_pts
+    }
 
     {actions, state} = process_packets(parsed, state)
 
@@ -139,7 +148,7 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp process_data_packet(packet, state) do
     pad = Pad.ref(:output, packet.track_id)
-    buffer_action = {:buffer, {pad, %Buffer{payload: packet.payload}}}
+    buffer_action = {:buffer, {pad, %Buffer{payload: packet.payload, metadata: packet.metadata}}}
     {[buffer_action], state}
   end
 
