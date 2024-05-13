@@ -135,11 +135,7 @@ defmodule Membrane.Ogg.Demuxer do
     end
   end
 
-  defp process_bos_packet(
-         %{payload: <<"OpusHead", 1, channels, preskip::little-unsigned-16, _rest::binary>>} =
-           packet,
-         state
-       ) do
+  defp process_bos_packet(%{payload: <<"OpusHead", _rest::binary>>} = packet, state) do
     new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
 
     {[new_track_action], %State{state | phase: :awaiting_linking}}
