@@ -87,7 +87,7 @@ defmodule ParserTest do
   end
 
   test "multiple pages" do
-    page1 = create_page([5], @sr * 1)
+    page1 = create_page([5], @sr)
     page2 = create_page([3], @sr * 2)
     page3 = create_page([255, 7], @sr * 3)
 
