@@ -4,10 +4,15 @@ defmodule ParserTest do
   import Membrane.Ogg.Parser
   alias Membrane.Ogg.Parser.Packet
 
-  defp create_page(segments) do
+  @sr 48_000
+
+  defp create_page(segments, granule_position \\ @sr) do
     segment_table = Enum.map_join(segments, fn seg -> <<seg>> end)
     content = Enum.map_join(segments, fn seg -> segment(seg) end)
-    before_crc = <<"OggS", 0, 0, 0::size(8 * 8), 0::size(4 * 8), 0::size(4 * 8)>>
+
+    before_crc =
+      <<"OggS", 0, 0, granule_position::little-size(8 * 8), 0::size(4 * 8), 0::size(4 * 8)>>
+
     after_crc = <<Enum.count(segments)>> <> segment_table <> content
     crc_payload = before_crc <> <<0::size(32)>> <> after_crc
 
@@ -45,8 +50,12 @@ defmodule ParserTest do
 
   test "simple page with a single segment" do
     page = create_page([5])
-    {parsed, continued_packets, rest} = parse(page, %{})
-    assert parsed == [%Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false}]
+    {parsed, continued_packets, rest, _next_page_pts} = parse(page, %{}, 0)
+
+    assert parsed == [
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0}
+           ]
+
     assert rest == <<>>
     assert continued_packets == %{}
   end
@@ -54,14 +63,15 @@ defmodule ParserTest do
   test "simple page with multiple segments" do
     page = create_page([255, 7])
 
-    {parsed, continued_packets, rest} = parse(page, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page, %{}, 0)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: 0
              }
            ]
 
@@ -73,34 +83,47 @@ defmodule ParserTest do
     page = create_page([255, 7, 3])
 
     slices = Enum.map(0..(byte_size(page) - 1), fn x -> String.slice(page, 0, x) end)
-    assert Enum.all?(slices, fn x -> parse(x, %{}) == {[], %{}, x} end) == true
+    assert Enum.all?(slices, fn x -> parse(x, %{}, 0) == {[], %{}, x, 0} end) == true
   end
 
   test "multiple pages" do
-    page1 = create_page([5])
-    page2 = create_page([3])
-    page3 = create_page([255, 7])
+    page1 = create_page([5], @sr * 1)
+    page2 = create_page([3], @sr * 2)
+    page3 = create_page([255, 7], @sr * 3)
 
-    {parsed, continued_packets, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
-             %Packet{payload: segment(3), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
+             %Packet{
+               payload: segment(3),
+               track_id: 0,
+               bos?: false,
+               eos?: false,
+               ogg_page_pts: Membrane.Time.second()
+             }
            ]
 
     assert rest == <<>>
     assert continued_packets == %{}
 
-    {parsed, continued_packets, rest} = parse(page1 <> page2 <> page3, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2 <> page3, %{}, 0)
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
-             %Packet{payload: segment(3), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
+             %Packet{
+               payload: segment(3),
+               track_id: 0,
+               bos?: false,
+               eos?: false,
+               ogg_page_pts: Membrane.Time.second()
+             },
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: Membrane.Time.seconds(2)
              }
            ]
 
@@ -111,14 +134,15 @@ defmodule ParserTest do
   test "page with multiple packets" do
     page = create_page([255, 7, 10])
 
-    {parsed, continued_packets, rest} = parse(page, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page, %{}, 0)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: 0
              },
              %Packet{payload: segment(10), track_id: 0, bos?: false, eos?: false}
            ]
@@ -128,44 +152,46 @@ defmodule ParserTest do
   end
 
   test "packet spanning through multiple pages" do
-    page1 = create_page([255, 255])
+    page1 = create_page([255, 255], -1)
     page2 = create_page([3])
 
-    {parsed, continued_packets, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: 0
              }
            ]
 
     assert rest == <<>>
     assert continued_packets == %{}
 
-    {parsed, continued_packets, rest} = parse(page1, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
 
     assert parsed == []
     assert rest == <<>>
     assert continued_packets == %{0 => segment(255) <> segment(255)}
 
-    {parsed, continued_packets, rest} = parse(page2, continued_packets)
+    {parsed, continued_packets, rest, _next_pts} = parse(page2, continued_packets, 0)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: 0
              }
            ]
 
     assert rest == <<>>
     assert continued_packets == %{}
 
-    {parsed, continued_packets, rest} = parse(page1 <> page1 <> page2, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page1 <> page2, %{}, 0)
 
     assert parsed == [
              %Packet{
@@ -173,7 +199,8 @@ defmodule ParserTest do
                  segment(255) <> segment(255) <> segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false
+               eos?: false,
+               ogg_page_pts: 0
              }
            ]
 
@@ -184,39 +211,57 @@ defmodule ParserTest do
   test "lacing values = 0" do
     page1 = create_page([255, 0])
 
-    {parsed, continued_packets, rest} = parse(page1, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
 
-    assert parsed == [%Packet{payload: segment(255), track_id: 0, bos?: false, eos?: false}]
+    assert parsed == [
+             %Packet{
+               payload: segment(255),
+               track_id: 0,
+               bos?: false,
+               eos?: false,
+               ogg_page_pts: 0
+             }
+           ]
+
     assert rest == <<>>
     assert continued_packets == %{}
 
     page1 = create_page([0])
 
-    {parsed, continued_packets, rest} = parse(page1, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
 
-    assert parsed == [%Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}]
+    assert parsed == [
+             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0}
+           ]
+
     assert rest == <<>>
     assert continued_packets == %{}
 
     page1 = create_page([2, 0])
 
-    {parsed, continued_packets, rest} = parse(page1, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
 
     assert parsed == [
-             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
              %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
     assert continued_packets == %{}
 
-    page1 = create_page([255])
+    page1 = create_page([255], -1)
     page2 = create_page([0, 1])
 
-    {parsed, continued_packets, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
 
     assert parsed == [
-             %Packet{payload: segment(255), track_id: 0, bos?: false, eos?: false},
+             %Packet{
+               payload: segment(255),
+               track_id: 0,
+               bos?: false,
+               eos?: false,
+               ogg_page_pts: 0
+             },
              %Packet{payload: segment(1), track_id: 0, bos?: false, eos?: false}
            ]
 
@@ -226,11 +271,14 @@ defmodule ParserTest do
 
   test "corrupted page (invalid crc)" do
     page = create_page_with_invalid_crc([5])
-    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, %{}) end
+    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, %{}, 0) end
   end
 
   test "corrupted page (invalid header)" do
     page = create_page_with_invalid_header([5])
-    assert_raise RuntimeError, "Corrupted stream: invalid page header", fn -> parse(page, %{}) end
+
+    assert_raise RuntimeError, "Corrupted stream: invalid page header", fn ->
+      parse(page, %{}, 0)
+    end
   end
 end

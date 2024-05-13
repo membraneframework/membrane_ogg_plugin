@@ -148,7 +148,11 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp process_data_packet(packet, state) do
     pad = Pad.ref(:output, packet.track_id)
-    buffer_action = {:buffer, {pad, %Buffer{payload: packet.payload, metadata: packet.metadata}}}
+
+    buffer_action =
+      {:buffer,
+       {pad, %Buffer{payload: packet.payload, metadata: %{ogg_page_pts: packet.ogg_page_pts}}}}
+
     {[buffer_action], state}
   end
 

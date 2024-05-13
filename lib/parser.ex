@@ -11,14 +11,14 @@ defmodule Membrane.Ogg.Parser do
             track_id: non_neg_integer(),
             bos?: boolean(),
             eos?: boolean(),
-            metadata: %{ogg_page_pts: Membrane.Time.t() | nil}
+            ogg_page_pts: Membrane.Time.t() | nil
           }
 
     defstruct payload: <<>>,
               track_id: 0,
               bos?: false,
               eos?: false,
-              metadata: %{ogg_page_pts: nil}
+              ogg_page_pts: nil
   end
 
   @type track_id_to_continued_packets :: %{non_neg_integer() => binary()}
@@ -27,7 +27,7 @@ defmodule Membrane.Ogg.Parser do
 
   @spec parse(binary(), track_id_to_continued_packets(), Membrane.Time.t()) ::
           {parsed :: [Packet.t()], continued_packets :: track_id_to_continued_packets(),
-           rest :: binary(), next_pts :: Membrane.Time.t()}
+           rest :: binary(), next_page_pts :: Membrane.Time.t()}
   def parse(data, continued_packets, pts) do
     do_parse([], data, continued_packets, pts)
   end
@@ -43,8 +43,8 @@ defmodule Membrane.Ogg.Parser do
       {:error, :invalid_header} ->
         raise "Corrupted stream: invalid page header"
 
-      {:ok, packets, continued_packets, rest, next_pts} ->
-        do_parse(acc ++ packets, rest, continued_packets, next_pts)
+      {:ok, packets, continued_packets, rest, next_page_pts} ->
+        do_parse(acc ++ packets, rest, continued_packets, next_page_pts)
     end
   end
 
@@ -73,22 +73,23 @@ defmodule Membrane.Ogg.Parser do
             eos?: (header_type &&& 0x4) > 0
           }
         end)
+        |> List.update_at(0, &%Packet{&1 | ogg_page_pts: pts})
 
-      next_pts =
-        Ratio.new(granule_position, @pts_calculation_sample_rate)
-        |> Membrane.Time.seconds()
+      next_page_pts =
+        if granule_position == -1 do
+          pts
+        else
+          Ratio.new(granule_position, @pts_calculation_sample_rate)
+          |> Membrane.Time.seconds()
+        end
 
-      [first_packet | rest_packets] = packets
-      first_packet = %Packet{first_packet | metadata: %{ogg_page_pts: pts}}
-      packets = [first_packet | rest_packets]
-
-      {:ok, packets, continued_packets, rest, next_pts}
+      {:ok, packets, continued_packets, rest, next_page_pts}
     end
   end
 
   defp parse_header(
-         <<"OggS", 0, header_type, granule_position::little-64,
-           bitstream_serial_number::little-unsigned-size(32), _page_sequence_number::32, _crc::32,
+         <<"OggS", 0, header_type, granule_position::little-signed-64,
+           bitstream_serial_number::little-unsigned-32, _page_sequence_number::32, _crc::32,
            number_of_page_segments, rest::binary>>
        ) do
     {:ok, rest, header_type, granule_position, bitstream_serial_number, number_of_page_segments}
