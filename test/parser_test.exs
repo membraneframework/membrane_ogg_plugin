@@ -50,20 +50,20 @@ defmodule ParserTest do
 
   test "simple page with a single segment" do
     page = create_page([5])
-    {parsed, continued_packets, rest, _next_page_pts} = parse(page, %{}, 0)
+    {parsed, track_states, rest} = parse(page, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0}
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0}
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "simple page with multiple segments" do
     page = create_page([255, 7])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page, %{}, 0)
+    {parsed, track_states, rest} = parse(page, %{})
 
     assert parsed == [
              %Packet{
@@ -71,19 +71,19 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "too short input" do
     page = create_page([255, 7, 3])
 
     slices = Enum.map(0..(byte_size(page) - 1), fn x -> String.slice(page, 0, x) end)
-    assert Enum.all?(slices, fn x -> parse(x, %{}, 0) == {[], %{}, x, 0} end) == true
+    assert Enum.all?(slices, fn x -> parse(x, %{}) == {[], %{}, x} end) == true
   end
 
   test "multiple pages" do
@@ -91,50 +91,50 @@ defmodule ParserTest do
     page2 = create_page([3], @sr * 2)
     page3 = create_page([255, 7], @sr * 3)
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
+    {parsed, track_states, rest} = parse(page1 <> page2, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0},
              %Packet{
                payload: segment(3),
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: Membrane.Time.second()
+               page_pts: Membrane.Time.second()
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2 <> page3, %{}, 0)
+    {parsed, track_states, rest} = parse(page1 <> page2 <> page3, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0},
              %Packet{
                payload: segment(3),
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: Membrane.Time.second()
+               page_pts: Membrane.Time.second()
              },
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: Membrane.Time.seconds(2)
+               page_pts: Membrane.Time.seconds(2)
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "page with multiple packets" do
     page = create_page([255, 7, 10])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page, %{}, 0)
+    {parsed, track_states, rest} = parse(page, %{})
 
     assert parsed == [
              %Packet{
@@ -142,20 +142,20 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              },
              %Packet{payload: segment(10), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "packet spanning through multiple pages" do
     page1 = create_page([255, 255], -1)
     page2 = create_page([3])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
+    {parsed, track_states, rest} = parse(page1 <> page2, %{})
 
     assert parsed == [
              %Packet{
@@ -163,20 +163,20 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
+    {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == []
     assert rest == <<>>
-    assert continued_packets == %{0 => segment(255) <> segment(255)}
+    assert track_states[0].continued_packet == segment(255) <> segment(255)
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page2, continued_packets, 0)
+    {parsed, track_states, rest} = parse(page2, track_states)
 
     assert parsed == [
              %Packet{
@@ -184,14 +184,14 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page1 <> page2, %{}, 0)
+    {parsed, track_states, rest} = parse(page1 <> page1 <> page2, %{})
 
     assert parsed == [
              %Packet{
@@ -200,18 +200,18 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "lacing values = 0" do
     page1 = create_page([255, 0])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
+    {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == [
              %Packet{
@@ -219,40 +219,40 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              }
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
     page1 = create_page([0])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
+    {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == [
-             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0}
+             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false, page_pts: 0}
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
     page1 = create_page([2, 0])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1, %{}, 0)
+    {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == [
-             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false, ogg_page_pts: 0},
+             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false, page_pts: 0},
              %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
 
     page1 = create_page([255], -1)
     page2 = create_page([0, 1])
 
-    {parsed, continued_packets, rest, _next_pts} = parse(page1 <> page2, %{}, 0)
+    {parsed, track_states, rest} = parse(page1 <> page2, %{})
 
     assert parsed == [
              %Packet{
@@ -260,25 +260,25 @@ defmodule ParserTest do
                track_id: 0,
                bos?: false,
                eos?: false,
-               ogg_page_pts: 0
+               page_pts: 0
              },
              %Packet{payload: segment(1), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert continued_packets == %{}
+    assert track_states[0].continued_packet == nil
   end
 
   test "corrupted page (invalid crc)" do
     page = create_page_with_invalid_crc([5])
-    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, %{}, 0) end
+    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, %{}) end
   end
 
   test "corrupted page (invalid header)" do
     page = create_page_with_invalid_header([5])
 
     assert_raise RuntimeError, "Corrupted stream: invalid page header", fn ->
-      parse(page, %{}, 0)
+      parse(page, %{})
     end
   end
 end

@@ -5,6 +5,11 @@ defmodule Membrane.Ogg.Demuxer do
   For now it supports only Ogg containing a single Opus track.
 
   All the tracks in the Ogg must have a corresponding output pad linked (`Pad.ref(:output, track_id)`).
+
+  The demuxer adds metadata to the buffers in form of `%{ogg: %{page_pts: Membrane.Time.t() | nil}}`.
+  The value is set only for the first completed packet of each OGG page and is calculated
+  based on the page's granule position (see [RFC 7845, sec. 4](https://www.rfc-editor.org/rfc/rfc7845.txt)).
+  For non-first packets it's set to `nil`.
   """
   use Membrane.Filter
   require Membrane.Logger
@@ -25,8 +30,8 @@ defmodule Membrane.Ogg.Demuxer do
   Notification sent when a new track is identified in the Ogg.
   Upon receiving the notification a `Pad.ref(:output, track_id)` pad should be linked.
   """
-  @type new_track_t() ::
-          {:new_track, {track_id :: integer(), track_type :: atom()}}
+  @type new_track() ::
+          {:new_track, {track_id :: non_neg_integer(), track_type :: atom()}}
 
   defmodule State do
     @moduledoc false
@@ -35,17 +40,13 @@ defmodule Membrane.Ogg.Demuxer do
             actions_buffer: [Membrane.Element.Action.t()],
             parser_acc: binary(),
             phase: :all_outputs_linked | :awaiting_linking,
-            continued_packets: %{},
-            tracks: [non_neg_integer()],
-            next_pts: Membrane.Time.t()
+            track_states: Parser.track_states()
           }
 
     defstruct actions_buffer: [],
               parser_acc: <<>>,
               phase: :awaiting_linking,
-              continued_packets: %{},
-              tracks: [],
-              next_pts: 0
+              track_states: %{}
   end
 
   @impl true
@@ -61,7 +62,7 @@ defmodule Membrane.Ogg.Demuxer do
   @impl true
   def handle_pad_added(Pad.ref(:output, id), _context, state) do
     stream_format = {Pad.ref(:output, id), %RemoteStream{type: :packetized, content_format: Opus}}
-    state = %State{state | phase: :all_outputs_linked, tracks: state.tracks ++ [id]}
+    state = %State{state | phase: :all_outputs_linked}
 
     {[stream_format: stream_format], state}
   end
@@ -70,14 +71,13 @@ defmodule Membrane.Ogg.Demuxer do
   def handle_buffer(:input, %Buffer{payload: bytes}, context, state) do
     rest = state.parser_acc <> bytes
 
-    {parsed, continued_packets, rest, next_pts} =
-      Parser.parse(rest, state.continued_packets, state.next_pts)
+    {parsed, new_track_states, rest} =
+      Parser.parse(rest, state.track_states)
 
     state = %State{
       state
       | parser_acc: rest,
-        continued_packets: continued_packets,
-        next_pts: next_pts
+        track_states: new_track_states
     }
 
     {actions, state} = process_packets(parsed, state)
@@ -109,8 +109,16 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   defp get_demands_from_context(context, state) do
-    Enum.reduce(state.tracks, %{}, fn track, acc ->
-      Map.put(acc, track, context.pads[Pad.ref(:output, track)].demand)
+    Enum.reduce(state.track_states, %{}, fn {track, _track_state}, acc ->
+      IO.inspect(context.pads, label: "track")
+
+      case context.pads[Pad.ref(:output, track)] do
+        nil ->
+          acc
+
+        %{demand: demand} ->
+          Map.put(acc, track, demand)
+      end
     end)
   end
 
@@ -130,9 +138,11 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   defp process_bos_packet(
-         %{payload: <<"OpusHead", _rest::binary>>} = packet,
+         %{payload: <<"OpusHead", 1, channels, preskip::little-unsigned-16, _rest::binary>>} =
+           packet,
          state
        ) do
+    IO.inspect({channels, preskip}, label: "preskip")
     new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
 
     {[new_track_action], %State{state | phase: :awaiting_linking}}
@@ -151,7 +161,7 @@ defmodule Membrane.Ogg.Demuxer do
 
     buffer_action =
       {:buffer,
-       {pad, %Buffer{payload: packet.payload, metadata: %{ogg_page_pts: packet.ogg_page_pts}}}}
+       {pad, %Buffer{payload: packet.payload, metadata: %{ogg: %{page_pts: packet.page_pts}}}}}
 
     {[buffer_action], state}
   end
