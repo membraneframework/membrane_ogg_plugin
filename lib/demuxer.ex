@@ -110,8 +110,6 @@ defmodule Membrane.Ogg.Demuxer do
 
   defp get_demands_from_context(context, state) do
     Enum.reduce(state.track_states, %{}, fn {track, _track_state}, acc ->
-      IO.inspect(context.pads, label: "track")
-
       case context.pads[Pad.ref(:output, track)] do
         nil ->
           acc
@@ -142,7 +140,6 @@ defmodule Membrane.Ogg.Demuxer do
            packet,
          state
        ) do
-    IO.inspect({channels, preskip}, label: "preskip")
     new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
 
     {[new_track_action], %State{state | phase: :awaiting_linking}}
