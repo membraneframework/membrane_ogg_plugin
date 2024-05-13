@@ -39,7 +39,7 @@ defmodule Membrane.Ogg.Demuxer do
     @type t :: %__MODULE__{
             buffer_actions: [Membrane.Element.Action.t()],
             parser_acc: binary(),
-            phase: :all_outputs_linked | :awaiting_linking,
+            phase: :all_outputs_linked | :awaiting_linking | :end_of_stream,
             track_states: Parser.track_states()
           }
 
@@ -55,11 +55,22 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @impl true
-  def handle_pad_added(Pad.ref(:output, id), _context, state) do
+  def handle_pad_added(Pad.ref(:output, id) = pad, _context, state) do
     stream_format = {Pad.ref(:output, id), %RemoteStream{type: :packetized, content_format: Opus}}
-    state = %State{state | phase: :all_outputs_linked}
 
-    {[{:stream_format, stream_format} | state.buffer_actions], %State{state | buffer_actions: []}}
+    case state.phase do
+      :awaiting_linking ->
+        {
+          [{:stream_format, stream_format} | state.buffer_actions],
+          %State{state | phase: :all_outputs_linked, buffer_actions: []}
+        }
+
+      :end_of_stream ->
+        {
+          [{:stream_format, stream_format} | state.buffer_actions] ++ [end_of_stream: pad],
+          %State{state | buffer_actions: []}
+        }
+    end
   end
 
   @impl true
@@ -93,6 +104,11 @@ defmodule Membrane.Ogg.Demuxer do
     end
   end
 
+  @impl true
+  def handle_end_of_stream(:input, _context, state) do
+    {[forward: :end_of_stream], %State{state | phase: :end_of_stream}}
+  end
+
   defp get_packet_actions(packets_list) do
     Enum.flat_map(packets_list, fn packet ->
       case packet do
@@ -108,10 +124,8 @@ defmodule Membrane.Ogg.Demuxer do
     end)
   end
 
-  defp process_bos_packet(%{payload: <<"OpusHead", _rest::binary>>} = packet, state) do
-    new_track_action = {:notify_parent, {:new_track, {packet.track_id, :opus}}}
-
-    [new_track_action]
+  defp process_bos_packet(%{payload: <<"OpusHead", _rest::binary>>} = packet) do
+    [{:notify_parent, {:new_track, {packet.track_id, :opus}}}]
   end
 
   defp process_bos_packet(_other) do
@@ -126,10 +140,5 @@ defmodule Membrane.Ogg.Demuxer do
     buffer = %Buffer{payload: packet.payload, metadata: %{ogg: %{page_pts: packet.page_pts}}}
 
     [buffer: {Pad.ref(:output, packet.track_id), buffer}]
-  end
-
-  @impl true
-  def handle_end_of_stream(:input, _context, state) do
-    {[forward: :end_of_stream], %State{state | buffer_actions: []}}
   end
 end
