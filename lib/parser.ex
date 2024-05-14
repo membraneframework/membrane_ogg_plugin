@@ -53,8 +53,7 @@ defmodule Membrane.Ogg.Parser do
 
   defp parse_page(initial_bytes, track_states) do
     with {:ok, data, header_type, granule_position, bitstream_serial_number,
-          number_of_page_segments} <-
-           parse_header(initial_bytes),
+          number_of_page_segments} <- parse_header(initial_bytes),
          {:ok, segment_table, data} <- parse_segment_table(data, number_of_page_segments),
          :ok <- verify_length_and_crc(initial_bytes, segment_table) do
       {packets, incomplete_packet, rest} = parse_segments(data, segment_table)

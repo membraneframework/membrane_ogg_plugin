@@ -112,33 +112,23 @@ defmodule Membrane.Ogg.Demuxer do
   defp get_packet_actions(packets_list) do
     Enum.flat_map(packets_list, fn packet ->
       case packet do
-        %Packet{bos?: true} ->
-          process_bos_packet(packet)
+        %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>, track_id: track_id} ->
+          [{:notify_parent, {:new_track, {track_id, :opus}}}]
+
+        %Packet{bos?: true, payload: _not_OpusHead} ->
+          raise "Invalid bos packet, probably unsupported codec."
 
         %Packet{eos?: true, payload: <<>>} ->
           []
 
-        data_packet ->
-          process_data_packet(data_packet)
+        %Packet{payload: <<"OpusTags", _rest::binary>>} ->
+          []
+
+        %Packet{payload: data_payload, page_pts: page_pts, track_id: track_id} ->
+          buffer = %Buffer{payload: data_payload, metadata: %{ogg: %{page_pts: page_pts}}}
+
+          [buffer: {Pad.ref(:output, track_id), buffer}]
       end
     end)
-  end
-
-  defp process_bos_packet(%{payload: <<"OpusHead", _rest::binary>>} = packet) do
-    [{:notify_parent, {:new_track, {packet.track_id, :opus}}}]
-  end
-
-  defp process_bos_packet(_other) do
-    raise "Invalid bos packet, probably unsupported codec."
-  end
-
-  defp process_data_packet(%{payload: <<"OpusTags", _rest::binary>>}) do
-    []
-  end
-
-  defp process_data_packet(packet) do
-    buffer = %Buffer{payload: packet.payload, metadata: %{ogg: %{page_pts: packet.page_pts}}}
-
-    [buffer: {Pad.ref(:output, packet.track_id), buffer}]
   end
 end
