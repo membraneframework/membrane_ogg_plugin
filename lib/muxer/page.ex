@@ -3,6 +3,8 @@ defmodule Membrane.OGG.Muxer.Page do
 
   import Bitwise
 
+  alias Membrane.OGG.Muxer.Page
+
   @type t :: %__MODULE__{
           continued: boolean(),
           bos: boolean(),
