@@ -12,12 +12,14 @@ defmodule Membrane.OGG.Muxer.Page do
           page_sequence_number: non_neg_integer(),
           number_page_segments: non_neg_integer(),
           segment_table: [0..255],
-          data: binary()
+          data: binary(),
+          metadata: %{pts: Membrane.Time.t()}
         }
 
-  @enforce_keys [:continued, :bos, :bitstream_serial_number, :page_sequence_number]
+  @enforce_keys [:bos, :bitstream_serial_number, :page_sequence_number, :metadata]
   defstruct @enforce_keys ++
               [
+                continued: false,
                 eos: :tbd,
                 granule_position: :tbd,
                 number_page_segments: 0,
@@ -91,8 +93,8 @@ defmodule Membrane.OGG.Muxer.Page do
   @spec serialize_type(Page.t()) :: 0..7
   defp serialize_type(page) do
     continued = if page.continued, do: 0x01, else: 0
-    first = if page.first, do: 0x02, else: 0
-    last = if page.last, do: 0x04, else: 0
-    first ||| continued ||| last
+    bos = if page.bos, do: 0x02, else: 0
+    eos = if page.eos, do: 0x04, else: 0
+    continued ||| bos ||| eos
   end
 end
