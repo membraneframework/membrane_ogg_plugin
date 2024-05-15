@@ -5,7 +5,7 @@ defmodule Membrane.OGG.Muxer.Page do
 
   alias Membrane.OGG.Muxer.Page
 
-  @type t :: %__MODULE__{
+  @type t :: %Page{
           continued: boolean(),
           bos: boolean(),
           eos: boolean() | :tbd,
@@ -40,7 +40,7 @@ defmodule Membrane.OGG.Muxer.Page do
   }
   @spec create_first(non_neg_integer()) :: Page.t()
   def create_first(bitstream_serial_number) do
-    %__MODULE__{
+    %Page{
       bos: true,
       bitstream_serial_number: bitstream_serial_number,
       page_sequence_number: 0
@@ -49,7 +49,7 @@ defmodule Membrane.OGG.Muxer.Page do
 
   @spec create_subsequent(Page.t()) :: Page.t()
   def create_subsequent(page) do
-    %__MODULE__{
+    %Page{
       bos: false,
       bitstream_serial_number: page.bitstream_serial_number,
       page_sequence_number: page.page_sequence_number + 1
@@ -87,7 +87,7 @@ defmodule Membrane.OGG.Muxer.Page do
 
   @spec finalize(Page.t(), boolean(), integer()) :: Page.t()
   def finalize(page, eos, granule_position) do
-    %__MODULE__{page | eos: eos, granule_position: granule_position}
+    %Page{page | eos: eos, granule_position: granule_position}
   end
 
   @spec serialize(Page.t()) :: binary()
