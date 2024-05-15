@@ -17,43 +17,34 @@ defmodule Membrane.Ogg.DemuxerMuxerTest do
         |> child(:demuxer, Membrane.Ogg.Demuxer)
       ]
 
-      state = %{output_dir: options.output_dir, track_id_to_file: options.track_id_to_output_file}
+      state = %{output_dir: options.output_dir}
 
       {[spec: spec], state}
     end
 
     @impl true
-    def handle_child_notification({:new_track, {track_id, codec}}, :demuxer, _context, state) do
-      output_file = state.track_id_to_file[track_id]
+    def handle_child_notification({:new_track, {track_id, :opus}}, :demuxer, _context, state) do
+      spec = [
+        get_child(:demuxer)
+        |> via_out(Pad.ref(:output, track_id))
+        |> child(:parser, Membrane.Opus.Parser)
+        |> child(:muxer, Membrane.OGG.Muxer)
+        |> child(:sink, %Membrane.File.Sink{
+          location: Path.join(state.output_dir, "out_opus.ogg")
+        })
+      ]
 
-      case codec do
-        :opus ->
-          spec = [
-            get_child(:demuxer)
-            |> via_out(Pad.ref(:output, track_id))
-            |> child(:parser, Membrane.Opus.Parser)
-            |> child(%Membrane.Debug.Filter{
-              handle_buffer: &IO.inspect(&1, label: "dupa buffer")
-            })
-            |> child(:muxer, Membrane.OGG.Muxer)
-            |> child(:sink, %Membrane.File.Sink{
-              location: Path.join(state.output_dir, output_file)
-            })
-          ]
-
-          {[spec: spec], state}
-      end
+      {[spec: spec], state}
     end
   end
 
-  defp test_stream(input_file, track_id_to_reference, tmp_dir) do
+  defp test_stream(input_file, tmp_dir) do
     pipeline =
       [
         module: TestPipeline,
         custom_args: %{
           input_file: Path.join(@fixtures_dir, input_file),
-          output_dir: tmp_dir,
-          track_id_to_output_file: track_id_to_reference
+          output_dir: tmp_dir
         }
       ]
       |> Testing.Pipeline.start_link_supervised!()
@@ -73,6 +64,6 @@ defmodule Membrane.Ogg.DemuxerMuxerTest do
   @tag :tmp_dir
   test "demuxing ogg containing opus and muxing again", %{tmp_dir: tmp_dir} do
     # 4_210_672_757 = track id in in_opus.ogg
-    test_stream("in_opus.ogg", %{4_210_672_757 => "ref_opus.opus"}, tmp_dir)
+    test_stream("in_opus.ogg", tmp_dir)
   end
 end

@@ -12,11 +12,10 @@ defmodule Membrane.OGG.Muxer.Page do
           page_sequence_number: non_neg_integer(),
           number_page_segments: non_neg_integer(),
           segment_table: [0..255],
-          data: binary(),
-          metadata: %{pts: Membrane.Time.t()}
+          data: binary()
         }
 
-  @enforce_keys [:bos, :bitstream_serial_number, :page_sequence_number, :metadata]
+  @enforce_keys [:bos, :bitstream_serial_number, :page_sequence_number]
   defstruct @enforce_keys ++
               [
                 continued: false,
@@ -37,18 +36,56 @@ defmodule Membrane.OGG.Muxer.Page do
     refin: false,
     refout: false
   }
+  @spec create_first(non_neg_integer()) :: Page.t()
+  def create_first(bitstream_serial_number) do
+    %__MODULE__{
+      bos: true,
+      bitstream_serial_number: bitstream_serial_number,
+      page_sequence_number: 0
+    }
+  end
 
-  @spec add_packet(Page.t(), binary()) :: {:ok, Page.t()} | {:error, :not_enough_space}
-  def add_packet(page, packet) do
-    %{segment_table: segment_table, data: data} = page
+  @spec create_subsequent(Page.t()) :: Page.t()
+  def create_subsequent(page) do
+    %__MODULE__{
+      bos: false,
+      bitstream_serial_number: page.bitstream_serial_number,
+      page_sequence_number: page.page_sequence_number + 1
+    }
+  end
+
+  @spec append_packet(Page.t(), binary()) :: {:ok, Page.t()} | {:error, :not_enough_space}
+  def append_packet(page, packet) do
+    %{number_page_segments: number_page_segments, segment_table: segment_table, data: data} = page
 
     packet_segments = create_segment_table(packet)
 
     if length(segment_table) + length(packet_segments) > 255 do
       {:error, :not_enough_space}
     else
-      {:ok, %{page | segment_table: segment_table ++ packet_segments, data: data <> packet}}
+      updated_page =
+        %{
+          page
+          | number_page_segments: number_page_segments + length(packet_segments),
+            segment_table: segment_table ++ packet_segments,
+            data: data <> packet
+        }
+
+      {:ok, updated_page}
     end
+  end
+
+  @spec append_packet!(Page.t(), binary()) :: Page.t()
+  def append_packet!(page, packet) do
+    case append_packet(page, packet) do
+      {:ok, page} -> page
+      {:error, reason} -> raise "Error appending packet to the page, reason: #{inspect(reason)}"
+    end
+  end
+
+  @spec finalize(Page.t(), boolean(), integer()) :: Page.t()
+  def finalize(page, eos, granule_position) do
+    %__MODULE__{page | eos: eos, granule_position: granule_position}
   end
 
   @spec serialize(Page.t()) :: binary()
@@ -67,7 +104,7 @@ defmodule Membrane.OGG.Muxer.Page do
 
     before_crc =
       <<@capture_pattern, @version, serialize_type(page), granule_position::little-signed-64,
-        bitstream_serial_number::little-64, page_sequence_number::little-64>>
+        bitstream_serial_number::little-32, page_sequence_number::little-32>>
 
     after_crc = <<number_page_segments>> <> :binary.list_to_bin(segment_table) <> data
 
