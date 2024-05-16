@@ -48,39 +48,38 @@ defmodule ParserTest do
 
   test "simple page with a single segment" do
     page = create_page([5])
-    {parsed, track_states, rest} = parse(page, %{})
+    {parsed, continued_packet, rest} = parse(page, nil)
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(5), bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "simple page with multiple segments" do
     page = create_page([255, 7])
 
-    {parsed, track_states, rest} = parse(page, %{})
+    {parsed, continued_packet, rest} = parse(page, nil)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(7),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "too short input" do
     page = create_page([255, 7, 3])
 
     slices = Enum.map(0..(byte_size(page) - 1), fn x -> String.slice(page, 0, x) end)
-    assert Enum.all?(slices, fn x -> parse(x, %{}) == {[], %{}, x} end) == true
+    assert Enum.all?(slices, fn x -> parse(x, nil) == {[], nil, x} end) == true
   end
 
   test "multiple pages" do
@@ -88,184 +87,175 @@ defmodule ParserTest do
     page2 = create_page([3])
     page3 = create_page([255, 7])
 
-    {parsed, track_states, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packet, rest} = parse(page1 <> page2, nil)
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(5), bos?: false, eos?: false},
              %Packet{
                payload: segment(3),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
-    {parsed, track_states, rest} = parse(page1 <> page2 <> page3, %{})
+    {parsed, continued_packet, rest} = parse(page1 <> page2 <> page3, nil)
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
+             %Packet{payload: segment(5), bos?: false, eos?: false},
              %Packet{
                payload: segment(3),
-               track_id: 0,
                bos?: false,
                eos?: false
              },
              %Packet{
                payload: segment(255) <> segment(7),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "page with multiple packets" do
     page = create_page([255, 7, 10])
 
-    {parsed, track_states, rest} = parse(page, %{})
+    {parsed, continued_packet, rest} = parse(page, nil)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(7),
-               track_id: 0,
                bos?: false
              },
-             %Packet{payload: segment(10), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(10), bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "packet spanning through multiple pages" do
     page1 = create_page([255, 255], -1)
     page2 = create_page([3])
 
-    {parsed, track_states, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packet, rest} = parse(page1 <> page2, nil)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
-    {parsed, track_states, rest} = parse(page1, %{})
+    {parsed, continued_packet, rest} = parse(page1, nil)
 
     assert parsed == []
     assert rest == <<>>
-    assert track_states[0].continued_packet == segment(255) <> segment(255)
+    assert continued_packet == segment(255) <> segment(255)
 
-    {parsed, track_states, rest} = parse(page2, track_states)
+    {parsed, continued_packet, rest} = parse(page2, continued_packet)
 
     assert parsed == [
              %Packet{
                payload: segment(255) <> segment(255) <> segment(3),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
-    {parsed, track_states, rest} = parse(page1 <> page1 <> page2, %{})
+    {parsed, continued_packet, rest} = parse(page1 <> page1 <> page2, nil)
 
     assert parsed == [
              %Packet{
                payload:
                  segment(255) <> segment(255) <> segment(255) <> segment(255) <> segment(3),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "lacing values = 0" do
     page1 = create_page([255, 0])
 
-    {parsed, track_states, rest} = parse(page1, %{})
+    {parsed, continued_packet, rest} = parse(page1, nil)
 
     assert parsed == [
              %Packet{
                payload: segment(255),
-               track_id: 0,
                bos?: false,
                eos?: false
              }
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
     page1 = create_page([0])
 
-    {parsed, track_states, rest} = parse(page1, %{})
+    {parsed, continued_packet, rest} = parse(page1, nil)
 
     assert parsed == [
-             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: <<>>, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
     page1 = create_page([2, 0])
 
-    {parsed, track_states, rest} = parse(page1, %{})
+    {parsed, continued_packet, rest} = parse(page1, nil)
 
     assert parsed == [
-             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false},
-             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(2), bos?: false, eos?: false},
+             %Packet{payload: <<>>, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
 
     page1 = create_page([255], -1)
     page2 = create_page([0, 1])
 
-    {parsed, track_states, rest} = parse(page1 <> page2, %{})
+    {parsed, continued_packet, rest} = parse(page1 <> page2, nil)
 
     assert parsed == [
              %Packet{
                payload: segment(255),
-               track_id: 0,
                bos?: false,
                eos?: false
              },
-             %Packet{payload: segment(1), track_id: 0, bos?: false, eos?: false}
+             %Packet{payload: segment(1), bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
-    assert track_states[0].continued_packet == nil
+    assert continued_packet == nil
   end
 
   test "corrupted page (invalid crc)" do
     page = create_page_with_invalid_crc([5])
-    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, %{}) end
+    assert_raise RuntimeError, "Corrupted stream: invalid crc", fn -> parse(page, nil) end
   end
 
   test "corrupted page (invalid header)" do
     page = create_page_with_invalid_header([5])
 
     assert_raise RuntimeError, "Corrupted stream: invalid page header", fn ->
-      parse(page, %{})
+      parse(page, nil)
     end
   end
 end
