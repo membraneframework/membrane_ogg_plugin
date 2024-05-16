@@ -5,11 +5,6 @@ defmodule Membrane.Ogg.Demuxer do
   For now it supports only Ogg containing a single Opus track.
 
   All the tracks in the Ogg must have a corresponding output pad linked (`Pad.ref(:output, track_id)`).
-
-  The demuxer adds metadata to the buffers in form of `%{ogg: %{page_pts: Membrane.Time.t() | nil}}`.
-  The value is set only for the first completed packet of each OGG page and is calculated
-  based on the page's granule position (see [RFC 7845, sec. 4](https://www.rfc-editor.org/rfc/rfc7845.txt)).
-  For non-first packets it's set to `nil`.
   """
   use Membrane.Filter
   require Membrane.Logger
@@ -115,7 +110,7 @@ defmodule Membrane.Ogg.Demuxer do
         %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>, track_id: track_id} ->
           [{:notify_parent, {:new_track, {track_id, :opus}}}]
 
-        %Packet{bos?: true, payload: _not_OpusHead} ->
+        %Packet{bos?: true, payload: _not_opushead} ->
           raise "Invalid bos packet, probably unsupported codec."
 
         %Packet{eos?: true, payload: <<>>} ->
@@ -124,8 +119,8 @@ defmodule Membrane.Ogg.Demuxer do
         %Packet{payload: <<"OpusTags", _rest::binary>>} ->
           []
 
-        %Packet{payload: data_payload, page_pts: page_pts, track_id: track_id} ->
-          buffer = %Buffer{payload: data_payload, metadata: %{ogg: %{page_pts: page_pts}}}
+        %Packet{payload: data_payload, track_id: track_id} ->
+          buffer = %Buffer{payload: data_payload}
 
           [buffer: {Pad.ref(:output, track_id), buffer}]
       end

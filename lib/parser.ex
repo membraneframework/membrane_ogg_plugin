@@ -10,24 +10,19 @@ defmodule Membrane.Ogg.Parser do
             payload: binary(),
             track_id: non_neg_integer(),
             bos?: boolean(),
-            eos?: boolean(),
-            page_pts: Membrane.Time.t() | nil
+            eos?: boolean()
           }
 
     defstruct payload: <<>>,
               track_id: 0,
               bos?: false,
-              eos?: false,
-              page_pts: nil
+              eos?: false
   end
 
   @type track_states() :: %{(track_id :: non_neg_integer()) => track_state :: track_state()}
   @type track_state() :: %{
-          next_pts: Membrane.Time.t(),
           continued_packet: binary()
         }
-
-  @pts_calculation_sample_rate 48_000
 
   @spec parse(binary(), track_states()) ::
           {parsed :: [Packet.t()], track_states :: track_states(), rest :: binary()}
@@ -52,14 +47,14 @@ defmodule Membrane.Ogg.Parser do
   end
 
   defp parse_page(initial_bytes, track_states) do
-    with {:ok, data, header_type, granule_position, bitstream_serial_number,
-          number_of_page_segments} <- parse_header(initial_bytes),
+    with {:ok, data, header_type, bitstream_serial_number, number_of_page_segments} <-
+           parse_header(initial_bytes),
          {:ok, segment_table, data} <- parse_segment_table(data, number_of_page_segments),
          :ok <- verify_length_and_crc(initial_bytes, segment_table) do
       {packets, incomplete_packet, rest} = parse_segments(data, segment_table)
 
-      %{next_pts: next_pts, continued_packet: continued_packet} =
-        Map.get(track_states, bitstream_serial_number, %{next_pts: 0, continued_packet: nil})
+      %{continued_packet: continued_packet} =
+        Map.get(track_states, bitstream_serial_number, %{continued_packet: nil})
 
       {packets, new_incomplete_packet} =
         prepend_continued_packet(
@@ -77,20 +72,10 @@ defmodule Membrane.Ogg.Parser do
             eos?: (header_type &&& 0x4) > 0
           }
         end)
-        |> List.update_at(0, &%Packet{&1 | page_pts: next_pts})
-
-      next_pts =
-        if granule_position == -1 do
-          next_pts
-        else
-          Ratio.new(granule_position, @pts_calculation_sample_rate)
-          |> Membrane.Time.seconds()
-        end
 
       track_states =
         Map.put(track_states, bitstream_serial_number, %{
-          continued_packet: new_incomplete_packet,
-          next_pts: next_pts
+          continued_packet: new_incomplete_packet
         })
 
       {:ok, packets, track_states, rest}
@@ -98,11 +83,11 @@ defmodule Membrane.Ogg.Parser do
   end
 
   defp parse_header(
-         <<"OggS", 0, header_type, granule_position::little-signed-64,
+         <<"OggS", 0, header_type, _granule_position::little-signed-64,
            bitstream_serial_number::little-unsigned-32, _page_sequence_number::32, _crc::32,
            number_of_page_segments, rest::binary>>
        ) do
-    {:ok, rest, header_type, granule_position, bitstream_serial_number, number_of_page_segments}
+    {:ok, rest, header_type, bitstream_serial_number, number_of_page_segments}
   end
 
   defp parse_header(<<_header_data::binary-size(27), _rest::binary>>) do

@@ -4,9 +4,7 @@ defmodule ParserTest do
   import Membrane.Ogg.Parser
   alias Membrane.Ogg.Parser.Packet
 
-  @sr 48_000
-
-  defp create_page(segments, granule_position \\ @sr) do
+  defp create_page(segments, granule_position \\ 1) do
     segment_table = Enum.map_join(segments, fn seg -> <<seg>> end)
     content = Enum.map_join(segments, fn seg -> segment(seg) end)
 
@@ -53,7 +51,7 @@ defmodule ParserTest do
     {parsed, track_states, rest} = parse(page, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0}
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
@@ -70,8 +68,7 @@ defmodule ParserTest do
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              }
            ]
 
@@ -87,20 +84,19 @@ defmodule ParserTest do
   end
 
   test "multiple pages" do
-    page1 = create_page([5], @sr)
-    page2 = create_page([3], @sr * 2)
-    page3 = create_page([255, 7], @sr * 3)
+    page1 = create_page([5])
+    page2 = create_page([3])
+    page3 = create_page([255, 7])
 
     {parsed, track_states, rest} = parse(page1 <> page2, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0},
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
              %Packet{
                payload: segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: Membrane.Time.second()
+               eos?: false
              }
            ]
 
@@ -110,20 +106,18 @@ defmodule ParserTest do
     {parsed, track_states, rest} = parse(page1 <> page2 <> page3, %{})
 
     assert parsed == [
-             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false, page_pts: 0},
+             %Packet{payload: segment(5), track_id: 0, bos?: false, eos?: false},
              %Packet{
                payload: segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: Membrane.Time.second()
+               eos?: false
              },
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: Membrane.Time.seconds(2)
+               eos?: false
              }
            ]
 
@@ -140,9 +134,7 @@ defmodule ParserTest do
              %Packet{
                payload: segment(255) <> segment(7),
                track_id: 0,
-               bos?: false,
-               eos?: false,
-               page_pts: 0
+               bos?: false
              },
              %Packet{payload: segment(10), track_id: 0, bos?: false, eos?: false}
            ]
@@ -162,8 +154,7 @@ defmodule ParserTest do
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              }
            ]
 
@@ -183,8 +174,7 @@ defmodule ParserTest do
                payload: segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              }
            ]
 
@@ -199,8 +189,7 @@ defmodule ParserTest do
                  segment(255) <> segment(255) <> segment(255) <> segment(255) <> segment(3),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              }
            ]
 
@@ -218,8 +207,7 @@ defmodule ParserTest do
                payload: segment(255),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              }
            ]
 
@@ -231,7 +219,7 @@ defmodule ParserTest do
     {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == [
-             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false, page_pts: 0}
+             %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
            ]
 
     assert rest == <<>>
@@ -242,7 +230,7 @@ defmodule ParserTest do
     {parsed, track_states, rest} = parse(page1, %{})
 
     assert parsed == [
-             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false, page_pts: 0},
+             %Packet{payload: segment(2), track_id: 0, bos?: false, eos?: false},
              %Packet{payload: <<>>, track_id: 0, bos?: false, eos?: false}
            ]
 
@@ -259,8 +247,7 @@ defmodule ParserTest do
                payload: segment(255),
                track_id: 0,
                bos?: false,
-               eos?: false,
-               page_pts: 0
+               eos?: false
              },
              %Packet{payload: segment(1), track_id: 0, bos?: false, eos?: false}
            ]
