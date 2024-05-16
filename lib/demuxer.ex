@@ -14,7 +14,7 @@ defmodule Membrane.Ogg.Demuxer do
 
   def_input_pad :input,
     flow_control: :auto,
-    accepted_format: any_of(RemoteStream)
+    accepted_format: %RemoteStream{content_format: format} when format in [nil, Ogg]
 
   def_output_pad :output,
     availability: :on_request,
@@ -120,9 +120,7 @@ defmodule Membrane.Ogg.Demuxer do
           []
 
         %Packet{payload: data_payload, track_id: track_id} ->
-          buffer = %Buffer{payload: data_payload}
-
-          [buffer: {Pad.ref(:output, track_id), buffer}]
+          [buffer: {Pad.ref(:output, track_id), %Buffer{payload: data_payload}}]
       end
     end)
   end
