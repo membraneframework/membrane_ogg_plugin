@@ -9,9 +9,10 @@ defmodule Membrane.Ogg.Muxer do
   use Numbers, overload_operators: true
 
   require Membrane.Logger
+  alias Membrane.Element.Action
   alias Membrane.{Buffer, Opus}
   alias Membrane.Ogg.Page
-  alias Membrane.Ogg.Opus.Header
+  alias Membrane.Ogg.Opus.{Header, Packet}
 
   def_input_pad :input,
     flow_control: :auto,
@@ -71,36 +72,19 @@ defmodule Membrane.Ogg.Muxer do
   end
 
   @impl true
-  def handle_buffer(
-        :input,
-        %Buffer{payload: packet, pts: pts, metadata: %{duration: duration}},
-        _ctx,
-        %State{current_page: current_page} = state
-      )
-      when not is_nil(pts) do
-    if pts > state.total_duration do
-      Membrane.Logger.debug("#{pts - state.total_duration}")
-    end
+  def handle_buffer(:input, %Buffer{pts: pts} = buffer, _ctx, state) when not is_nil(pts) do
+    packets_to_encapsulate =
+      if pts > state.total_duration do
+        Membrane.Logger.debug(
+          "Stream discontiunuity of length #{Membrane.Time.as_microseconds(pts - state.total_duration, :round)}microseconds, using Packet Loss Concealment"
+        )
 
-    {actions, state} =
-      case Page.append_packet(current_page, packet) do
-        {:ok, page} ->
-          {[], %{state | current_page: page}}
-
-        {:error, :not_enough_space} ->
-          complete_page =
-            current_page
-            |> Page.finalize(false, calculate_granule_position(pts))
-
-          new_page =
-            Page.create_subsequent_to(complete_page)
-            |> Page.append_packet!(packet)
-
-          {[buffer: {:output, %Buffer{payload: Page.serialize(complete_page)}}],
-           %{state | current_page: new_page}}
+        Packet.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
+      else
+        [buffer]
       end
 
-    {actions, %{state | total_duration: state.total_duration + duration}}
+    encapsulate_packets(packets_to_encapsulate, state)
   end
 
   @impl true
@@ -117,5 +101,39 @@ defmodule Membrane.Ogg.Muxer do
   def calculate_granule_position(duration) do
     (Membrane.Time.as_seconds(duration, :exact) * @fixed_sample_rate)
     |> Ratio.trunc()
+  end
+
+  @spec encapsulate_packets([Buffer.t() | Packet.plc_packet()], State.t(), [Action.t()]) ::
+          {[Action.t()], State.t()}
+  defp encapsulate_packets(packets, state, actions \\ [])
+
+  defp encapsulate_packets([first_packet | rest_packets], state, actions) do
+    {new_actions, state} =
+      case Page.append_packet(state.current_page, first_packet.payload) do
+        {:ok, page} ->
+          {[], %{state | current_page: page}}
+
+        {:error, :not_enough_space} ->
+          complete_page =
+            state.current_page
+            |> Page.finalize(false, calculate_granule_position(first_packet.pts))
+
+          new_page =
+            Page.create_subsequent_to(complete_page)
+            |> Page.append_packet!(first_packet.payload)
+
+          {[buffer: {:output, %Buffer{payload: Page.serialize(complete_page)}}],
+           %{state | current_page: new_page}}
+      end
+
+    encapsulate_packets(
+      rest_packets,
+      %{state | total_duration: state.total_duration + first_packet.metadata.duration},
+      actions ++ new_actions
+    )
+  end
+
+  defp encapsulate_packets([], state, actions) do
+    {actions, state}
   end
 end
