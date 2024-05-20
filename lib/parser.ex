@@ -8,29 +8,25 @@ defmodule Membrane.Ogg.Parser do
 
     @type t() :: %__MODULE__{
             payload: binary(),
-            track_id: non_neg_integer(),
             bos?: boolean(),
             eos?: boolean()
           }
 
     defstruct payload: <<>>,
-              track_id: 0,
               bos?: false,
               eos?: false
   end
 
-  @type continued_packets_t :: %{integer => binary}
-
-  @spec parse(binary, continued_packets_t) ::
-          {parsed :: [Packet.t()], continued_packets :: continued_packets_t, rest :: binary}
-  def parse(data, continued_packets) do
-    do_parse([], data, continued_packets)
+  @spec parse(binary(), binary() | nil) ::
+          {parsed :: [Packet.t()], new_continued_packet :: binary(), rest :: binary()}
+  def parse(data, continued_packet) do
+    do_parse([], data, continued_packet)
   end
 
-  defp do_parse(acc, data, continued_packets) do
-    case parse_page(data, continued_packets) do
+  defp do_parse(acc, data, continued_packet) do
+    case parse_page(data, continued_packet) do
       {:error, :need_more_bytes} ->
-        {acc, continued_packets, data}
+        {acc, continued_packet, data}
 
       {:error, :invalid_crc} ->
         raise "Corrupted stream: invalid crc"
@@ -38,46 +34,43 @@ defmodule Membrane.Ogg.Parser do
       {:error, :invalid_header} ->
         raise "Corrupted stream: invalid page header"
 
-      {:ok, packets, continued_packets, rest} ->
-        do_parse(acc ++ packets, rest, continued_packets)
+      {:ok, packets, incomplete_packet, rest} ->
+        do_parse(acc ++ packets, rest, incomplete_packet)
     end
   end
 
-  defp parse_page(initial_bytes, continued_packets) do
-    with {:ok, data, header_type, bitstream_serial_number, number_of_page_segments} <-
-           parse_header(initial_bytes),
+  defp parse_page(initial_bytes, continued_packet) do
+    with {:ok, data, header_type, number_of_page_segments} <- parse_header(initial_bytes),
          {:ok, segment_table, data} <- parse_segment_table(data, number_of_page_segments),
          :ok <- verify_length_and_crc(initial_bytes, segment_table) do
-      {packets, page_continued_packet, rest} = parse_segments(data, segment_table)
+      {packets, incomplete_packet, rest} = parse_segments(data, segment_table)
 
-      {packets, continued_packets} =
+      {packets, incomplete_packet} =
         prepend_continued_packet(
-          continued_packets,
-          bitstream_serial_number,
+          continued_packet,
           packets,
-          page_continued_packet
+          incomplete_packet
         )
 
       packets =
         Enum.map(packets, fn packet ->
           %Packet{
             payload: packet,
-            track_id: bitstream_serial_number,
             bos?: (header_type &&& 0x2) > 0,
             eos?: (header_type &&& 0x4) > 0
           }
         end)
 
-      {:ok, packets, continued_packets, rest}
+      {:ok, packets, incomplete_packet, rest}
     end
   end
 
   defp parse_header(
-         <<"OggS", 0, header_type, _granule_position::64,
-           bitstream_serial_number::little-unsigned-size(32), _page_sequence_number::32, _crc::32,
+         <<"OggS", 0, header_type, _granule_position::little-signed-64,
+           _bitstream_serial_number::little-unsigned-32, _page_sequence_number::32, _crc::32,
            number_of_page_segments, rest::binary>>
        ) do
-    {:ok, rest, header_type, bitstream_serial_number, number_of_page_segments}
+    {:ok, rest, header_type, number_of_page_segments}
   end
 
   defp parse_header(<<_header_data::binary-size(27), _rest::binary>>) do
@@ -160,42 +153,17 @@ defmodule Membrane.Ogg.Parser do
     end
   end
 
-  defp prepend_continued_packet(
-         continued_packets,
-         bitstream_serial_number,
-         packets,
-         page_continued_packet
-       ) do
-    {packets, continued_packets, page_continued_packet} =
-      if Map.has_key?(continued_packets, bitstream_serial_number) do
-        # a special case when there is just one unfinished packet in the page
-        if Enum.empty?(packets) do
-          page_continued_packet =
-            continued_packets[bitstream_serial_number] <> page_continued_packet
+  defp prepend_continued_packet(continued_packet, packets, incomplete_packet) do
+    cond do
+      continued_packet == nil ->
+        {packets, incomplete_packet}
 
-          {packets, continued_packets, page_continued_packet}
-        else
-          [first_packet | rest_of_packets] = packets
+      Enum.empty?(packets) ->
+        {packets, continued_packet <> incomplete_packet}
 
-          packets = [
-            continued_packets[bitstream_serial_number] <> first_packet | rest_of_packets
-          ]
-
-          continued_packets = Map.delete(continued_packets, bitstream_serial_number)
-
-          {packets, continued_packets, page_continued_packet}
-        end
-      else
-        {packets, continued_packets, page_continued_packet}
-      end
-
-    if page_continued_packet != nil do
-      continued_packets =
-        Map.put(continued_packets, bitstream_serial_number, page_continued_packet)
-
-      {packets, continued_packets}
-    else
-      {packets, continued_packets}
+      true ->
+        [first_packet | rest_packets] = packets
+        {[continued_packet <> first_packet | rest_packets], incomplete_packet}
     end
   end
 
