@@ -1,4 +1,4 @@
-defmodule Membrane.OGG.Muxer do
+defmodule Membrane.Ogg.Muxer do
   @moduledoc """
   A Membrane element for muxing streams into a OGG container.
   For now only supports muxing a single Opus track containing one stream (mono or stereo).
@@ -79,7 +79,8 @@ defmodule Membrane.OGG.Muxer do
         %Buffer{payload: packet, pts: pts, metadata: %{duration: duration}},
         _ctx,
         %State{current_page: current_page} = state
-      ) do
+      )
+      when not is_nil(pts) do
     if pts > state.total_duration do
       Membrane.Logger.debug("#{pts - state.total_duration}")
     end

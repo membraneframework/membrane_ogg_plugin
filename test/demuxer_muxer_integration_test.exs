@@ -27,8 +27,8 @@ defmodule Membrane.Ogg.DemuxerMuxerTest do
       spec = [
         get_child(:demuxer)
         |> via_out(Pad.ref(:output, track_id))
-        |> child(:parser, Membrane.Opus.Parser)
-        |> child(:muxer, Membrane.OGG.Muxer)
+        |> child(:parser, %Membrane.Opus.Parser{generate_best_effort_timestamps?: true})
+        |> child(:muxer, Membrane.Ogg.Muxer)
         |> child(:sink, %Membrane.File.Sink{
           location: Path.join(state.output_dir, "out_opus.ogg")
         })

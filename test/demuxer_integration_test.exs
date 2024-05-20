@@ -17,7 +17,6 @@ defmodule Membrane.Ogg.DemuxerTest do
     ]
 
     pipeline = Membrane.Testing.Pipeline.start_link_supervised!(spec: spec)
-
     assert_end_of_stream(pipeline, :sink)
 
     Testing.Pipeline.terminate(pipeline)

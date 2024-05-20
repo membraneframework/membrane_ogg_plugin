@@ -102,7 +102,7 @@ defmodule Membrane.OGG.Muxer.Page do
     } = page
 
     if page.eos == :tbd or page.granule_position == :tbd,
-      do: raise("eos or granule position not set")
+      do: raise("eos or granule position not set, Page not finalized (run finalize/2)")
 
     before_crc =
       <<@capture_pattern, @version, serialize_type(page), granule_position::little-signed-64,
