@@ -45,7 +45,7 @@ defmodule Membrane.Ogg.Parser do
          :ok <- verify_length_and_crc(initial_bytes, segment_table) do
       {packets, incomplete_packet, rest} = parse_segments(data, segment_table)
 
-      {packets, new_incomplete_packet} =
+      {packets, incomplete_packet} =
         prepend_continued_packet(
           continued_packet,
           packets,
@@ -61,7 +61,7 @@ defmodule Membrane.Ogg.Parser do
           }
         end)
 
-      {:ok, packets, new_incomplete_packet, rest}
+      {:ok, packets, incomplete_packet, rest}
     end
   end
 
