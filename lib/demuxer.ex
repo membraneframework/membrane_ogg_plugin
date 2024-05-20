@@ -65,6 +65,7 @@ defmodule Membrane.Ogg.Demuxer do
     get_packet_actions(parsed, state)
   end
 
+  @spec get_packet_actions([Packet.t()], State.t()) :: {[Membrane.Element.Action.t()], State.t()}
   defp get_packet_actions(packets_list, state) do
     {actions, packets_containing_bos_packet} =
       Enum.flat_map_reduce(packets_list, state.received_bos_packet, &get_packet_action/2)
@@ -72,6 +73,7 @@ defmodule Membrane.Ogg.Demuxer do
     {actions, %State{state | received_bos_packet: packets_containing_bos_packet}}
   end
 
+  @spec get_packet_action(Packet.t(), boolean()) :: {[Membrane.Element.Action.t()], boolean()}
   defp get_packet_action(packet, received_bos_packet) do
     case packet do
       %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>} ->
