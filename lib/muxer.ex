@@ -19,10 +19,9 @@ defmodule Membrane.Ogg.Muxer do
 
   def_output_pad :output,
     flow_control: :auto,
-    accepted_format: %Membrane.RemoteStream{type: :packetized, content_format: OGG}
+    accepted_format: %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
   @fixed_sample_rate 48_000
-  @bitstream_serial_number_range 0..0xFFFF_FFFF
 
   defmodule State do
     @moduledoc false
@@ -46,11 +45,10 @@ defmodule Membrane.Ogg.Muxer do
 
   @impl true
   def handle_stream_format(:input, %Opus{channels: channels}, _ctx, state) do
-    stream_format = %Membrane.RemoteStream{type: :packetized, content_format: OGG}
+    stream_format = %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
     header_page =
-      Enum.random(@bitstream_serial_number_range)
-      |> Page.create_first()
+      Page.create_first(0)
       |> Page.append_packet!(Header.create_id_header(channels))
       |> Page.finalize(false, 0)
 
