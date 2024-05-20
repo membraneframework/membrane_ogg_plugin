@@ -10,8 +10,8 @@ defmodule Membrane.Ogg.Muxer do
 
   require Membrane.Logger
   alias Membrane.{Buffer, Opus}
-  alias Membrane.OGG.Muxer.Page
-  alias Membrane.OGG.Muxer.Page.Header
+  alias Membrane.Ogg.Page
+  alias Membrane.Ogg.Opus.Header
 
   def_input_pad :input,
     flow_control: :auto,
@@ -53,12 +53,11 @@ defmodule Membrane.Ogg.Muxer do
       |> Page.finalize(false, 0)
 
     comment_page =
-      header_page
-      |> Page.create_subsequent()
+      Page.create_subsequent_to(header_page)
       |> Page.append_packet!(Header.create_comment_header())
       |> Page.finalize(false, 0)
 
-    first_audio_data_page = Page.create_subsequent(comment_page)
+    first_audio_data_page = Page.create_subsequent_to(comment_page)
 
     buffers = [
       %Buffer{payload: Page.serialize(header_page)},
@@ -94,8 +93,7 @@ defmodule Membrane.Ogg.Muxer do
             |> Page.finalize(false, calculate_granule_position(pts))
 
           new_page =
-            complete_page
-            |> Page.create_subsequent()
+            Page.create_subsequent_to(complete_page)
             |> Page.append_packet!(packet)
 
           {[buffer: {:output, %Buffer{payload: Page.serialize(complete_page)}}],

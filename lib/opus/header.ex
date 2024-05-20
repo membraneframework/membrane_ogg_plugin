@@ -1,4 +1,4 @@
-defmodule Membrane.OGG.Muxer.Page.Header do
+defmodule Membrane.Ogg.Opus.Header do
   @moduledoc false
 
   @id_header_signature "OpusHead"

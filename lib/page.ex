@@ -1,9 +1,9 @@
-defmodule Membrane.OGG.Muxer.Page do
+defmodule Membrane.Ogg.Page do
   @moduledoc false
 
   import Bitwise
 
-  alias Membrane.OGG.Muxer.Page
+  alias Membrane.Ogg.Page
 
   @type t :: %Page{
           continued: boolean(),
@@ -47,8 +47,8 @@ defmodule Membrane.OGG.Muxer.Page do
     }
   end
 
-  @spec create_subsequent(Page.t()) :: Page.t()
-  def create_subsequent(page) do
+  @spec create_subsequent_to(Page.t()) :: Page.t()
+  def create_subsequent_to(page) do
     %Page{
       bos: false,
       bitstream_serial_number: page.bitstream_serial_number,
