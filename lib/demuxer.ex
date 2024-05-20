@@ -26,12 +26,12 @@ defmodule Membrane.Ogg.Demuxer do
     @type t :: %__MODULE__{
             parser_acc: binary(),
             continued_packet: binary(),
-            received_bos_page: boolean()
+            received_bos_packet: boolean()
           }
 
     defstruct parser_acc: <<>>,
               continued_packet: nil,
-              received_bos_page: false
+              received_bos_packet: false
   end
 
   @impl true
@@ -66,30 +66,32 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   defp get_packet_actions(packets_list, state) do
-    {actions, received_bos_page} =
-      Enum.flat_map_reduce(packets_list, state.received_bos_page, fn packet, received_bos_page ->
-        case packet do
-          %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>} ->
-            if received_bos_page do
-              raise "Multiple Opus streams in the input Ogg stream, currently unsupported"
-            end
+    {actions, packets_containing_bos_packet} =
+      Enum.flat_map_reduce(packets_list, state.received_bos_packet, &get_packet_action/2)
 
-            {[], true}
+    {actions, %State{state | received_bos_packet: packets_containing_bos_packet}}
+  end
 
-          %Packet{bos?: true, payload: _not_opushead} ->
-            raise "Invalid bos packet, probably unsupported codec."
-
-          %Packet{eos?: true, payload: <<>>} ->
-            {[], received_bos_page}
-
-          %Packet{payload: <<"OpusTags", _rest::binary>>} ->
-            {[], received_bos_page}
-
-          %Packet{payload: data_payload} ->
-            {[buffer: {:output, %Buffer{payload: data_payload}}], received_bos_page}
+  defp get_packet_action(packet, received_bos_packet) do
+    case packet do
+      %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>} ->
+        if received_bos_packet do
+          raise "Multiple Opus streams in the input Ogg stream, currently unsupported"
         end
-      end)
 
-    {actions, %State{state | received_bos_page: received_bos_page}}
+        {[], true}
+
+      %Packet{bos?: true, payload: _not_opushead} ->
+        raise "Invalid bos packet, probably unsupported codec."
+
+      %Packet{eos?: true, payload: <<>>} ->
+        {[], received_bos_packet}
+
+      %Packet{payload: <<"OpusTags", _rest::binary>>} ->
+        {[], received_bos_packet}
+
+      %Packet{payload: data_payload} ->
+        {[buffer: {:output, %Buffer{payload: data_payload}}], received_bos_packet}
+    end
   end
 end
