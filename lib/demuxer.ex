@@ -25,11 +25,13 @@ defmodule Membrane.Ogg.Demuxer do
 
     @type t :: %__MODULE__{
             parser_acc: binary(),
-            continued_packet: binary()
+            continued_packet: binary(),
+            received_bos_page: boolean()
           }
 
     defstruct parser_acc: <<>>,
-              continued_packet: nil
+              continued_packet: nil,
+              received_bos_page: false
   end
 
   @impl true
@@ -60,32 +62,34 @@ defmodule Membrane.Ogg.Demuxer do
         continued_packet: new_continued_packet
     }
 
-    {get_packet_actions(parsed), state}
+    get_packet_actions(parsed, state)
   end
 
-  @impl true
-  def handle_end_of_stream(:input, _context, state) do
-    {[forward: :end_of_stream], state}
-  end
+  defp get_packet_actions(packets_list, state) do
+    {actions, received_bos_page} =
+      Enum.flat_map_reduce(packets_list, state.received_bos_page, fn packet, received_bos_page ->
+        case packet do
+          %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>} ->
+            if received_bos_page do
+              raise "Multiple Opus streams in the input Ogg stream, currently unsupported"
+            end
 
-  defp get_packet_actions(packets_list) do
-    Enum.flat_map(packets_list, fn packet ->
-      case packet do
-        %Packet{bos?: true, payload: <<"OpusHead", _rest::binary>>} ->
-          []
+            {[], true}
 
-        %Packet{bos?: true, payload: _not_opushead} ->
-          raise "Invalid bos packet, probably unsupported codec."
+          %Packet{bos?: true, payload: _not_opushead} ->
+            raise "Invalid bos packet, probably unsupported codec."
 
-        %Packet{eos?: true, payload: <<>>} ->
-          []
+          %Packet{eos?: true, payload: <<>>} ->
+            {[], received_bos_page}
 
-        %Packet{payload: <<"OpusTags", _rest::binary>>} ->
-          []
+          %Packet{payload: <<"OpusTags", _rest::binary>>} ->
+            {[], received_bos_page}
 
-        %Packet{payload: data_payload} ->
-          [buffer: {:output, %Buffer{payload: data_payload}}]
-      end
-    end)
+          %Packet{payload: data_payload} ->
+            {[buffer: {:output, %Buffer{payload: data_payload}}], received_bos_page}
+        end
+      end)
+
+    {actions, %State{state | received_bos_page: received_bos_page}}
   end
 end
