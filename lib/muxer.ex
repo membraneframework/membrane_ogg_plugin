@@ -11,7 +11,6 @@ defmodule Membrane.Ogg.Muxer do
   require Membrane.Logger
   alias Membrane.Element.Action
   alias Membrane.{Buffer, Opus}
-  alias Membrane.Ogg
   alias Membrane.Ogg.Page
 
   def_input_pad :input,
@@ -50,12 +49,12 @@ defmodule Membrane.Ogg.Muxer do
 
     header_page =
       Page.create_first(0)
-      |> Page.append_packet!(Ogg.Opus.Header.create_id_header(channels))
+      |> Page.append_packet!(Membrane.Ogg.Opus.create_id_header(channels))
       |> Page.finalize(0)
 
     comment_page =
       Page.create_subsequent(header_page)
-      |> Page.append_packet!(Ogg.Opus.Header.create_comment_header())
+      |> Page.append_packet!(Membrane.Ogg.Opus.create_comment_header())
       |> Page.finalize(0)
 
     first_audio_data_page = Page.create_subsequent(comment_page)
@@ -79,7 +78,7 @@ defmodule Membrane.Ogg.Muxer do
           "Stream discontiunuity of length #{Membrane.Time.as_microseconds(pts - state.total_duration, :round) / 1000}ms, using Packet Loss Concealment"
         )
 
-        Ogg.Opus.Packet.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
+        Membrane.Ogg.Opus.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
       else
         [buffer]
       end
@@ -103,7 +102,7 @@ defmodule Membrane.Ogg.Muxer do
     |> Ratio.trunc()
   end
 
-  @spec encapsulate_packets([Buffer.t() | Ogg.Opus.Packet.plc_packet()], State.t(), [Action.t()]) ::
+  @spec encapsulate_packets([Buffer.t() | Membrane.Ogg.Opus.plc_packet()], State.t(), [Action.t()]) ::
           {[Action.t()], State.t()}
   defp encapsulate_packets(packets, state, actions \\ [])
 
