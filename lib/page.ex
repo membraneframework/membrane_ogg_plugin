@@ -8,8 +8,8 @@ defmodule Membrane.Ogg.Page do
   @type t :: %Page{
           continued: boolean(),
           bos: boolean(),
-          eos: boolean() | :tbd,
-          granule_position: integer() | :tbd,
+          eos: boolean() | :unknown,
+          granule_position: integer() | :unknown,
           bitstream_serial_number: non_neg_integer(),
           page_sequence_number: non_neg_integer(),
           number_page_segments: non_neg_integer(),
@@ -21,8 +21,8 @@ defmodule Membrane.Ogg.Page do
   defstruct @enforce_keys ++
               [
                 continued: false,
-                eos: :tbd,
-                granule_position: :tbd,
+                eos: :unknown,
+                granule_position: :unknown,
                 number_page_segments: 0,
                 segment_table: [],
                 data: <<>>
@@ -47,8 +47,8 @@ defmodule Membrane.Ogg.Page do
     }
   end
 
-  @spec create_subsequent_to(Page.t()) :: Page.t()
-  def create_subsequent_to(page) do
+  @spec create_subsequent(Page.t()) :: Page.t()
+  def create_subsequent(page) do
     %Page{
       bos: false,
       bitstream_serial_number: page.bitstream_serial_number,
@@ -60,7 +60,7 @@ defmodule Membrane.Ogg.Page do
   def append_packet(page, packet) do
     %{number_page_segments: number_page_segments, segment_table: segment_table, data: data} = page
 
-    packet_segments = create_segment_table(packet)
+    packet_segments = get_packet_segment_table(packet)
 
     if length(segment_table) + length(packet_segments) > 255 do
       {:error, :not_enough_space}
@@ -85,14 +85,15 @@ defmodule Membrane.Ogg.Page do
     end
   end
 
-  @spec finalize(Page.t(), boolean(), integer()) :: Page.t()
-  def finalize(page, eos, granule_position) do
+  @spec finalize(Page.t(), integer(), boolean()) :: Page.t()
+  def finalize(page, granule_position, eos \\ false) do
     %Page{page | eos: eos, granule_position: granule_position}
   end
 
   @spec serialize(Page.t()) :: binary()
   def serialize(page) do
     %{
+      eos: eos,
       granule_position: granule_position,
       bitstream_serial_number: bitstream_serial_number,
       page_sequence_number: page_sequence_number,
@@ -101,8 +102,8 @@ defmodule Membrane.Ogg.Page do
       data: data
     } = page
 
-    if page.eos == :tbd or page.granule_position == :tbd,
-      do: raise("eos or granule position not set, Page not finalized (run finalize/2)")
+    if eos == :unknown or granule_position == :unknown,
+      do: raise("eos or granule position not determined, Page not finalized (run finalize/2)")
 
     before_crc =
       <<@capture_pattern, @version, serialize_type(page), granule_position::little-signed-64,
@@ -115,11 +116,11 @@ defmodule Membrane.Ogg.Page do
     <<before_crc::binary, crc::little-32, after_crc::binary>>
   end
 
-  @spec create_segment_table(binary()) :: [0..255]
-  defp create_segment_table(packet) do
+  @spec get_packet_segment_table(binary()) :: [0..255]
+  defp get_packet_segment_table(packet) do
     case packet do
       <<_segment::binary-255, rest::binary>> ->
-        [255 | create_segment_table(rest)]
+        [255 | get_packet_segment_table(rest)]
 
       <<shorter_segment::binary>> ->
         [byte_size(shorter_segment)]

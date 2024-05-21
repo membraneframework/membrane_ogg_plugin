@@ -11,12 +11,12 @@ defmodule Membrane.Ogg.Muxer do
   require Membrane.Logger
   alias Membrane.Element.Action
   alias Membrane.{Buffer, Opus}
+  alias Membrane.Ogg
   alias Membrane.Ogg.Page
-  alias Membrane.Ogg.Opus.{Header, Packet}
 
   def_input_pad :input,
     flow_control: :auto,
-    accepted_format: any_of(%Membrane.Opus{self_delimiting?: false})
+    accepted_format: %Membrane.Opus{self_delimiting?: false}
 
   def_output_pad :output,
     flow_control: :auto,
@@ -50,15 +50,15 @@ defmodule Membrane.Ogg.Muxer do
 
     header_page =
       Page.create_first(0)
-      |> Page.append_packet!(Header.create_id_header(channels))
-      |> Page.finalize(false, 0)
+      |> Page.append_packet!(Ogg.Opus.Header.create_id_header(channels))
+      |> Page.finalize(0)
 
     comment_page =
-      Page.create_subsequent_to(header_page)
-      |> Page.append_packet!(Header.create_comment_header())
-      |> Page.finalize(false, 0)
+      Page.create_subsequent(header_page)
+      |> Page.append_packet!(Ogg.Opus.Header.create_comment_header())
+      |> Page.finalize(0)
 
-    first_audio_data_page = Page.create_subsequent_to(comment_page)
+    first_audio_data_page = Page.create_subsequent(comment_page)
 
     buffers = [
       %Buffer{payload: Page.serialize(header_page)},
@@ -67,7 +67,7 @@ defmodule Membrane.Ogg.Muxer do
 
     {
       [stream_format: {:output, stream_format}, buffer: {:output, buffers}],
-      %{state | current_page: first_audio_data_page}
+      %State{state | current_page: first_audio_data_page}
     }
   end
 
@@ -76,10 +76,10 @@ defmodule Membrane.Ogg.Muxer do
     packets_to_encapsulate =
       if pts > state.total_duration do
         Membrane.Logger.debug(
-          "Stream discontiunuity of length #{Membrane.Time.as_microseconds(pts - state.total_duration, :round)}microseconds, using Packet Loss Concealment"
+          "Stream discontiunuity of length #{Membrane.Time.as_microseconds(pts - state.total_duration, :round) / 1000}ms, using Packet Loss Concealment"
         )
 
-        Packet.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
+        Ogg.Opus.Packet.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
       else
         [buffer]
       end
@@ -91,19 +91,19 @@ defmodule Membrane.Ogg.Muxer do
   def handle_end_of_stream(:input, _ctx, %State{current_page: current_page} = state) do
     payload =
       current_page
-      |> Page.finalize(true, calculate_granule_position(state.total_duration))
+      |> Page.finalize(calculate_granule_position(state.total_duration), true)
       |> Page.serialize()
 
     {[buffer: {:output, %Buffer{payload: payload}}, end_of_stream: :output], state}
   end
 
   @spec calculate_granule_position(Membrane.Time.t()) :: non_neg_integer()
-  def calculate_granule_position(duration) do
+  defp calculate_granule_position(duration) do
     (Membrane.Time.as_seconds(duration, :exact) * @fixed_sample_rate)
     |> Ratio.trunc()
   end
 
-  @spec encapsulate_packets([Buffer.t() | Packet.plc_packet()], State.t(), [Action.t()]) ::
+  @spec encapsulate_packets([Buffer.t() | Ogg.Opus.Packet.plc_packet()], State.t(), [Action.t()]) ::
           {[Action.t()], State.t()}
   defp encapsulate_packets(packets, state, actions \\ [])
 
@@ -111,19 +111,19 @@ defmodule Membrane.Ogg.Muxer do
     {new_actions, state} =
       case Page.append_packet(state.current_page, first_packet.payload) do
         {:ok, page} ->
-          {[], %{state | current_page: page}}
+          {[], %State{state | current_page: page}}
 
         {:error, :not_enough_space} ->
           complete_page =
             state.current_page
-            |> Page.finalize(false, calculate_granule_position(first_packet.pts))
+            |> Page.finalize(calculate_granule_position(first_packet.pts))
 
           new_page =
-            Page.create_subsequent_to(complete_page)
+            Page.create_subsequent(complete_page)
             |> Page.append_packet!(first_packet.payload)
 
           {[buffer: {:output, %Buffer{payload: Page.serialize(complete_page)}}],
-           %{state | current_page: new_page}}
+           %State{state | current_page: new_page}}
       end
 
     encapsulate_packets(
