@@ -26,7 +26,7 @@ end
 
 For an example see `examples/demuxer_example.exs`. To run the example you can use the following command:
 
-```iex examples/demuxer_example.exs```
+```elixir examples/demuxer_example.exs```
 
 On macOS you might need to set the opus include path like this:
 

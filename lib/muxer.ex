@@ -9,16 +9,13 @@ defmodule Membrane.Ogg.Muxer do
   use Numbers, overload_operators: true
 
   require Membrane.Logger
-  alias Membrane.Element.Action
   alias Membrane.{Buffer, Opus}
   alias Membrane.Ogg.Page
 
   def_input_pad :input,
-    flow_control: :auto,
     accepted_format: %Membrane.Opus{self_delimiting?: false}
 
   def_output_pad :output,
-    flow_control: :auto,
     accepted_format: %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
   @fixed_sample_rate 48_000
@@ -71,7 +68,13 @@ defmodule Membrane.Ogg.Muxer do
   end
 
   @impl true
-  def handle_buffer(:input, %Buffer{pts: pts} = buffer, _ctx, state) when not is_nil(pts) do
+  def handle_buffer(
+        :input,
+        %Buffer{pts: pts, metadata: %{duration: _duration}} = buffer,
+        _ctx,
+        state
+      )
+      when not is_nil(pts) do
     packets_to_encapsulate =
       if pts > state.total_duration do
         Membrane.Logger.debug(
@@ -83,7 +86,9 @@ defmodule Membrane.Ogg.Muxer do
         [buffer]
       end
 
-    encapsulate_packets(packets_to_encapsulate, state)
+    {buffers, state} = encapsulate_packets(packets_to_encapsulate, state)
+
+    {[buffer: {:output, buffers}], state}
   end
 
   @impl true
@@ -102,12 +107,12 @@ defmodule Membrane.Ogg.Muxer do
     |> Ratio.trunc()
   end
 
-  @spec encapsulate_packets([Buffer.t() | Membrane.Ogg.Opus.plc_packet()], State.t(), [Action.t()]) ::
-          {[Action.t()], State.t()}
-  defp encapsulate_packets(packets, state, actions \\ [])
+  @spec encapsulate_packets([Buffer.t() | Membrane.Ogg.Opus.plc_packet()], State.t(), [Buffer.t()]) ::
+          {pages :: [Buffer.t()], state :: State.t()}
+  defp encapsulate_packets(packets, state, page_buffers \\ [])
 
-  defp encapsulate_packets([first_packet | rest_packets], state, actions) do
-    {new_actions, state} =
+  defp encapsulate_packets([first_packet | rest_packets], state, page_buffers) do
+    {new_page_buffers, state} =
       case Page.append_packet(state.current_page, first_packet.payload) do
         {:ok, page} ->
           {[], %State{state | current_page: page}}
@@ -121,18 +126,18 @@ defmodule Membrane.Ogg.Muxer do
             Page.create_subsequent(complete_page)
             |> Page.append_packet!(first_packet.payload)
 
-          {[buffer: {:output, %Buffer{payload: Page.serialize(complete_page)}}],
+          {[%Buffer{payload: Page.serialize(complete_page)}],
            %State{state | current_page: new_page}}
       end
 
     encapsulate_packets(
       rest_packets,
       %{state | total_duration: state.total_duration + first_packet.metadata.duration},
-      actions ++ new_actions
+      page_buffers ++ new_page_buffers
     )
   end
 
-  defp encapsulate_packets([], state, actions) do
-    {actions, state}
+  defp encapsulate_packets([], state, page_buffers) do
+    {page_buffers, state}
   end
 end
