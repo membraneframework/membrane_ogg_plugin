@@ -78,7 +78,7 @@ defmodule Membrane.Ogg.Muxer do
     packets_to_encapsulate =
       if pts > state.total_duration do
         Membrane.Logger.debug(
-          "Stream discontiunuity of length #{Membrane.Time.as_microseconds(pts - state.total_duration, :round) / 1000}ms, using Packet Loss Concealment"
+          "Stream discontiunuity of length #{Membrane.Time.as_milliseconds(pts - state.total_duration, :exact) |> Ratio.to_float()}ms, using Packet Loss Concealment"
         )
 
         Membrane.Ogg.Opus.create_plc_packets(pts, pts - state.total_duration) ++ [buffer]
