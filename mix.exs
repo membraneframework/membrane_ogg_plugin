@@ -1,7 +1,7 @@
 defmodule Membrane.Ogg.Mixfile do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
   @github_url "https://github.com/membraneframework/membrane_ogg_plugin"
 
   def project do
@@ -42,6 +42,7 @@ defmodule Membrane.Ogg.Mixfile do
       {:crc, "~> 0.10"},
       {:membrane_file_plugin, "~> 0.16.0", only: :test},
       {:membrane_portaudio_plugin, "~> 0.18.0", only: :test},
+      {:membrane_opus_plugin, "~> 0.20.2", only: :test},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false}

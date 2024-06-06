@@ -1,13 +1,7 @@
-
 Mix.install([
-  {:membrane_core, "~> 0.11.0"},
-  {:membrane_opus_format, "~> 0.3.0"},
-  {:crc, "~> 0.10"},
-  {:membrane_file_plugin, "~> 0.13.1"},
-  {:membrane_portaudio_plugin,
-    git: "https://github.com/membraneframework/membrane_portaudio_plugin.git",
-    branch: "bugfix/rename_playback_state_to_playback"},
-  {:membrane_opus_plugin, "~> 0.16.0"},
+  {:membrane_file_plugin, "~> 0.16.0"},
+  {:membrane_portaudio_plugin, "~> 0.18.0"},
+  {:membrane_opus_plugin, "~> 0.20.0"},
   {:membrane_ogg_plugin, path: __DIR__ |> Path.join("..") |> Path.expand()},
 ])
 
@@ -18,28 +12,31 @@ defmodule DemuxerExample do
   def handle_init(_context, _opts) do
     structure = [
       child(:source, %Membrane.File.Source{
-        location: "./test/fixtures/test_fixtures_1.ogg"
-      }) |>
-      child(:ogg_demuxer, Membrane.Ogg.Demuxer)
+        location: "./test/fixtures/in_opus.ogg"
+      })
+      |> child(:ogg_demuxer, Membrane.Ogg.Demuxer)
+      |> child(:opus, Membrane.Opus.Decoder)
+      |> child(:portaudio, Membrane.PortAudio.Sink)
     ]
 
-    {[spec: structure, playback: :playing], %{}}
+    {[spec: structure], %{}}
   end
 
   @impl true
-  def handle_child_notification({:new_track, {track_id, codec}}, :ogg_demuxer, _context, state) do
-    case codec do
-      :opus ->
-        structure = [
-          get_child(:ogg_demuxer)
-          |> via_out(Pad.ref(:output, track_id))
-          |> child(:opus, Membrane.Opus.Decoder)
-          |> child(:portaudio, Membrane.PortAudio.Sink)
-        ]
+  def handle_element_end_of_stream(:portaudio, _pad, _ctx, state) do
+    {[terminate: :normal], state}
+  end
 
-        {[spec: structure, playback: :playing], state}
-    end
+  def handle_element_end_of_stream(_element, _pad, _ctx, state) do
+    {[], state}
   end
 end
 
-{:ok, sup_pid, pid}  =  DemuxerExample.start_link()
+{:ok, _supervisor_pid, pipeline_pid} = Membrane.Pipeline.start(DemuxerExample)
+ref = Process.monitor(pipeline_pid)
+
+# Wait for the pipeline to finish
+receive do
+  {:DOWN, ^ref, :process, _pipeline_pid, _reason} ->
+    :ok
+end
