@@ -1,6 +1,8 @@
 defmodule Membrane.Ogg.Opus do
   @moduledoc false
 
+  require Membrane.Logger
+
   @id_header_signature "OpusHead"
   @version 1
   @preskip 0
@@ -35,10 +37,16 @@ defmodule Membrane.Ogg.Opus do
 
   @spec create_plc_packets(Membrane.Time.t(), Membrane.Time.t()) :: [plc_packet()]
   def create_plc_packets(gap_start_timestamp, gap_duration) do
-    # PLC = Packet Loss Concealment
-    if rem(gap_duration, @shortest_frame_duration) != 0, do: raise("Unrecoverable gap")
+    # PLC: Packet Loss Concealment
+    if rem(gap_duration, @shortest_frame_duration) != 0 do
+      Membrane.Logger.warning(
+        "Theoretically impossible gap in Opus stream of #{Membrane.Time.as_milliseconds(gap_duration, :exact) |> Ratio.to_float()}ms"
+      )
+    end
 
-    packets_to_generate = div(gap_duration, @shortest_frame_duration)
+    # Adding a millisecond margin in case of timestamp innacuracies
+    packets_to_generate =
+      div(gap_duration + Membrane.Time.millisecond(), @shortest_frame_duration)
 
     Range.to_list(0..(packets_to_generate - 1))
     |> Enum.map(

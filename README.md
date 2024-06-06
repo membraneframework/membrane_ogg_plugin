@@ -15,7 +15,7 @@ The package can be installed by adding `membrane_ogg_plugin` to your list of dep
 ```elixir
 def deps do
   [
-    {:membrane_ogg_plugin, "~> 0.4.0"}
+    {:membrane_ogg_plugin, "~> 0.5.0"}
   ]
 end
 ```
@@ -26,7 +26,7 @@ end
 
 For an example see `examples/demuxer_example.exs`. To run the example you can use the following command:
 
-```iex examples/demuxer_example.exs```
+```elixir examples/demuxer_example.exs```
 
 On macOS you might need to set the opus include path like this:
 
