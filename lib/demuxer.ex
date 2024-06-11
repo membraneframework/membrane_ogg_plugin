@@ -10,7 +10,7 @@ defmodule Membrane.Ogg.Demuxer do
   require Membrane.Logger
   alias Membrane.Ogg.Parser
   alias Membrane.Ogg.Parser.Packet
-  alias Membrane.{Buffer, Opus, RemoteStream}
+  alias Membrane.{Buffer, Ogg, Opus, RemoteStream}
 
   def_input_pad :input,
     flow_control: :auto,
