@@ -9,7 +9,7 @@ defmodule Membrane.Ogg.Muxer do
   use Numbers, overload_operators: true
 
   require Membrane.Logger
-  alias Membrane.{Buffer, Opus}
+  alias Membrane.{Buffer, Ogg}
   alias Membrane.Ogg.Page
 
   def_input_pad :input,
@@ -41,17 +41,17 @@ defmodule Membrane.Ogg.Muxer do
   end
 
   @impl true
-  def handle_stream_format(:input, %Opus{channels: channels}, _ctx, state) do
+  def handle_stream_format(:input, %Membrane.Opus{channels: channels}, _ctx, state) do
     stream_format = %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
     header_page =
       Page.create_first(0)
-      |> Page.append_packet!(Membrane.Ogg.Opus.create_id_header(channels))
+      |> Page.append_packet!(Ogg.Opus.create_id_header(channels))
       |> Page.finalize(0)
 
     comment_page =
       Page.create_subsequent(header_page)
-      |> Page.append_packet!(Membrane.Ogg.Opus.create_comment_header())
+      |> Page.append_packet!(Ogg.Opus.create_comment_header())
       |> Page.finalize(0)
 
     first_audio_data_page = Page.create_subsequent(comment_page)

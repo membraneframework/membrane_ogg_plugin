@@ -38,6 +38,7 @@ defmodule Membrane.Ogg.Page do
     refin: false,
     refout: false
   }
+
   @spec create_first(non_neg_integer()) :: Page.t()
   def create_first(bitstream_serial_number) do
     %Page{
