@@ -63,7 +63,7 @@ defmodule Membrane.Ogg.Muxer do
 
     {
       [stream_format: {:output, stream_format}, buffer: {:output, buffers}],
-      %State{state | current_page: first_audio_data_page}
+      %{state | current_page: first_audio_data_page}
     }
   end
 
@@ -115,7 +115,7 @@ defmodule Membrane.Ogg.Muxer do
     {new_page_buffers, state} =
       case Page.append_packet(state.current_page, first_packet.payload) do
         {:ok, page} ->
-          {[], %State{state | current_page: page}}
+          {[], %{state | current_page: page}}
 
         {:error, :not_enough_space} ->
           complete_page =
@@ -127,7 +127,7 @@ defmodule Membrane.Ogg.Muxer do
             |> Page.append_packet!(first_packet.payload)
 
           {[%Buffer{payload: Page.serialize(complete_page)}],
-           %State{state | current_page: new_page}}
+           %{state | current_page: new_page}}
       end
 
     encapsulate_packets(
