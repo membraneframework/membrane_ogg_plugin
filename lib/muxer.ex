@@ -111,11 +111,11 @@ defmodule Membrane.Ogg.Muxer do
           {pages :: [Buffer.t()], state :: State.t()}
   defp encapsulate_packets(packets, state, page_buffers \\ [])
 
-  defp encapsulate_packets([first_packet | rest_packets], state, page_buffers) do
+  defp encapsulate_packets([first_packet | rest_packets], %State{} = state, page_buffers) do
     {new_page_buffers, state} =
       case Page.append_packet(state.current_page, first_packet.payload) do
         {:ok, page} ->
-          {[], %{state | current_page: page}}
+          {[], %State{state | current_page: page}}
 
         {:error, :not_enough_space} ->
           complete_page =
@@ -126,8 +126,7 @@ defmodule Membrane.Ogg.Muxer do
             Page.create_subsequent(complete_page)
             |> Page.append_packet!(first_packet.payload)
 
-          {[%Buffer{payload: Page.serialize(complete_page)}],
-           %{state | current_page: new_page}}
+          {[%Buffer{payload: Page.serialize(complete_page)}], %{state | current_page: new_page}}
       end
 
     encapsulate_packets(
