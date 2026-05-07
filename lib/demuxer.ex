@@ -66,7 +66,7 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @spec get_packet_actions([Packet.t()], State.t()) :: {[Membrane.Element.Action.t()], State.t()}
-  defp get_packet_actions(packets_list, state) do
+  defp get_packet_actions(packets_list, %State{} = state) do
     {actions, packets_containing_bos_packet} =
       Enum.flat_map_reduce(packets_list, state.received_bos_packet, &get_packet_action/2)
 

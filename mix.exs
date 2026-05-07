@@ -43,9 +43,9 @@ defmodule Membrane.Ogg.Mixfile do
       {:membrane_file_plugin, "~> 0.16.0", only: :test},
       {:membrane_portaudio_plugin, "~> 0.18.0", only: :test},
       {:membrane_opus_plugin, "~> 0.20.2", only: :test},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
+      {:credo, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 
