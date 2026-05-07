@@ -87,7 +87,7 @@ defmodule Membrane.Ogg.Page do
   end
 
   @spec finalize(Page.t(), integer(), boolean()) :: Page.t()
-  def finalize(page, granule_position, eos \\ false) do
+  def finalize(%Page{} = page, granule_position, eos \\ false) do
     %Page{page | eos: eos, granule_position: granule_position}
   end
 

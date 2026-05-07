@@ -8,9 +8,9 @@ defmodule Membrane.Ogg.Demuxer do
   """
   use Membrane.Filter
   require Membrane.Logger
+  alias Membrane.{Buffer, Ogg, Opus, RemoteStream}
   alias Membrane.Ogg.Parser
   alias Membrane.Ogg.Parser.Packet
-  alias Membrane.{Buffer, Ogg, Opus, RemoteStream}
 
   def_input_pad :input,
     flow_control: :auto,
@@ -50,7 +50,7 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @impl true
-  def handle_buffer(:input, %Buffer{payload: bytes}, _ctx, state) do
+  def handle_buffer(:input, %Buffer{payload: bytes}, _ctx, %State{} = state) do
     rest = state.parser_acc <> bytes
 
     {parsed, new_continued_packet, rest} =
@@ -66,7 +66,7 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @spec get_packet_actions([Packet.t()], State.t()) :: {[Membrane.Element.Action.t()], State.t()}
-  defp get_packet_actions(packets_list, state) do
+  defp get_packet_actions(packets_list, %State{} = state) do
     {actions, packets_containing_bos_packet} =
       Enum.flat_map_reduce(packets_list, state.received_bos_packet, &get_packet_action/2)
 

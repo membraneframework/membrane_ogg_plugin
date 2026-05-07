@@ -41,7 +41,7 @@ defmodule Membrane.Ogg.Muxer do
   end
 
   @impl true
-  def handle_stream_format(:input, %Membrane.Opus{channels: channels}, _ctx, state) do
+  def handle_stream_format(:input, %Membrane.Opus{channels: channels}, _ctx, %State{} = state) do
     stream_format = %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
     header_page =
@@ -111,7 +111,7 @@ defmodule Membrane.Ogg.Muxer do
           {pages :: [Buffer.t()], state :: State.t()}
   defp encapsulate_packets(packets, state, page_buffers \\ [])
 
-  defp encapsulate_packets([first_packet | rest_packets], state, page_buffers) do
+  defp encapsulate_packets([first_packet | rest_packets], %State{} = state, page_buffers) do
     {new_page_buffers, state} =
       case Page.append_packet(state.current_page, first_packet.payload) do
         {:ok, page} ->

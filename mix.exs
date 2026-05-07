@@ -1,7 +1,7 @@
 defmodule Membrane.Ogg.Mixfile do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.5.1"
   @github_url "https://github.com/membraneframework/membrane_ogg_plugin"
 
   def project do
@@ -51,11 +51,13 @@ defmodule Membrane.Ogg.Mixfile do
 
   defp dialyzer() do
     opts = [
-      flags: [:error_handling]
+      flags: [:error_handling],
+      plt_add_apps: [:syntax_tools]
     ]
 
     if System.get_env("CI") == "true" do
       # Store PLTs in cacheable directory for CI
+      File.mkdir_p!(Path.join([__DIR__, "priv", "plts"]))
       [plt_local_path: "priv/plts", plt_core_path: "priv/plts"] ++ opts
     else
       opts
