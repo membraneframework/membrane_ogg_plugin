@@ -88,7 +88,7 @@ defmodule Membrane.Ogg.Page do
 
   @spec finalize(Page.t(), integer(), boolean()) :: Page.t()
   def finalize(page, granule_position, eos \\ false) do
-    %{page | eos: eos, granule_position: granule_position}
+    %Page{page | eos: eos, granule_position: granule_position}
   end
 
   @spec serialize(Page.t()) :: binary()

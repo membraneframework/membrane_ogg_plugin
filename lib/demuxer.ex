@@ -50,13 +50,13 @@ defmodule Membrane.Ogg.Demuxer do
   end
 
   @impl true
-  def handle_buffer(:input, %Buffer{payload: bytes}, _ctx, state) do
+  def handle_buffer(:input, %Buffer{payload: bytes}, _ctx, %State{} = state) do
     rest = state.parser_acc <> bytes
 
     {parsed, new_continued_packet, rest} =
       Parser.parse(rest, state.continued_packet)
 
-    state = %{
+    state = %State{
       state
       | parser_acc: rest,
         continued_packet: new_continued_packet
@@ -70,7 +70,7 @@ defmodule Membrane.Ogg.Demuxer do
     {actions, packets_containing_bos_packet} =
       Enum.flat_map_reduce(packets_list, state.received_bos_packet, &get_packet_action/2)
 
-    {actions, %{state | received_bos_packet: packets_containing_bos_packet}}
+    {actions, %State{state | received_bos_packet: packets_containing_bos_packet}}
   end
 
   @spec get_packet_action(Packet.t(), boolean()) :: {[Membrane.Element.Action.t()], boolean()}

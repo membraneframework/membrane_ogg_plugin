@@ -41,7 +41,7 @@ defmodule Membrane.Ogg.Muxer do
   end
 
   @impl true
-  def handle_stream_format(:input, %Membrane.Opus{channels: channels}, _ctx, state) do
+  def handle_stream_format(:input, %Membrane.Opus{channels: channels}, _ctx, %State{} = state) do
     stream_format = %Membrane.RemoteStream{type: :packetized, content_format: Ogg}
 
     header_page =
@@ -63,7 +63,7 @@ defmodule Membrane.Ogg.Muxer do
 
     {
       [stream_format: {:output, stream_format}, buffer: {:output, buffers}],
-      %{state | current_page: first_audio_data_page}
+      %State{state | current_page: first_audio_data_page}
     }
   end
 
@@ -126,7 +126,8 @@ defmodule Membrane.Ogg.Muxer do
             Page.create_subsequent(complete_page)
             |> Page.append_packet!(first_packet.payload)
 
-          {[%Buffer{payload: Page.serialize(complete_page)}], %{state | current_page: new_page}}
+          {[%Buffer{payload: Page.serialize(complete_page)}],
+           %State{state | current_page: new_page}}
       end
 
     encapsulate_packets(
