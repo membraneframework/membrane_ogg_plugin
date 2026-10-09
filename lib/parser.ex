@@ -83,7 +83,7 @@ defmodule Membrane.Ogg.Parser do
 
   defp parse_segment_table(data, page_segments_count) do
     case data do
-      <<segment_table::binary-size(page_segments_count), data::binary>> ->
+      <<segment_table::binary-size(^page_segments_count), data::binary>> ->
         {:ok, :binary.bin_to_list(segment_table), data}
 
       _other ->
@@ -102,7 +102,7 @@ defmodule Membrane.Ogg.Parser do
       after_crc_size = 1 + segments_count + content_length
 
       <<before_crc::binary-size(22), crc::little-unsigned-size(32),
-        after_crc::binary-size(after_crc_size), _rest::binary>> = data
+        after_crc::binary-size(^after_crc_size), _rest::binary>> = data
 
       crc_payload = <<before_crc::binary, 0::size(32), after_crc::binary>>
 
@@ -172,7 +172,7 @@ defmodule Membrane.Ogg.Parser do
   end
 
   defp split_packets(data, [count | rem_counts]) do
-    <<packet::binary-size(count), rem_data::binary>> = data
+    <<packet::binary-size(^count), rem_data::binary>> = data
     {packets, rem_data} = split_packets(rem_data, rem_counts)
     {[packet | packets], rem_data}
   end

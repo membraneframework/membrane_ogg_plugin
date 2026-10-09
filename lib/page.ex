@@ -125,9 +125,6 @@ defmodule Membrane.Ogg.Page do
 
       <<shorter_segment::binary>> ->
         [byte_size(shorter_segment)]
-
-      <<>> ->
-        [0]
     end
   end
 
